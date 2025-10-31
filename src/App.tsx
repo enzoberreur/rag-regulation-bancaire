@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { SessionHistory } from './components/SessionHistory';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
+import { LoginModal } from './components/LoginModal';
+import { UserProfile } from './components/UserProfile';
 import { Toaster } from './components/ui/sonner';
+import { getDocuments } from './services/api';
 
 interface Message {
   id: string;
@@ -32,6 +35,8 @@ interface ObservabilityMetrics {
   errors: number;
   cost: number;
   tokensUsed: number;
+  citationsCount?: number;
+  averageSimilarityScore?: number;
 }
 
 interface UploadedDocument {
@@ -43,45 +48,230 @@ interface UploadedDocument {
 }
 
 export default function App() {
-  const [sessions, setSessions] = useState<Session[]>([
-    {
-      id: '1',
-      title: 'ACPR Regulation 2024-15',
-      timestamp: new Date(2025, 9, 30, 10, 30),
-      preview: 'Analyze new capital requirements regulation...',
-      messages: [
-        {
-          id: '1',
-          role: 'user',
-          content: 'Can you analyze the ACPR Regulation 2024-15 requirements on climate-related capital and check if our current Risk Management Policy RMP-2024-03 is compliant?',
-          timestamp: new Date(2025, 9, 30, 10, 30)
-        },
-        {
-          id: '2',
-          role: 'assistant',
-          content: "Based on the ACPR Regulation 2024-15, Article 12 requires enhanced capital requirements for climate-related exposures. Cross-referencing with HexaBank's Risk Management Policy (RMP-2024-03), Section 4.2, there appears to be a gap in the current climate risk assessment framework.\n\nKey Findings:\n\n1. COMPLIANCE GAP IDENTIFIED\nACPR Regulation 2024-15, Article 12 mandates quantitative climate exposure assessments with monthly reporting. Your current RMP-2024-03 Section 4.2 only addresses qualitative climate risk considerations without specific quantification methodologies.\n\n2. REGULATORY REQUIREMENTS\n• Article 12(3) requires monthly climate exposure reporting to supervisory authorities\n• Article 15 mandates establishment of a dedicated Climate Risk Committee at board level\n• Article 18 specifies minimum capital buffer of 2.5% for high climate risk exposures\n\n3. RECOMMENDED ACTIONS\n• Update RMP-2024-03 Section 4.2 to include climate exposure quantification methodology aligned with ACPR standards\n• Implement automated monthly reporting system for climate-related capital requirements\n• Establish Climate Risk Committee per Article 15 requirements\n• Conduct gap analysis for capital buffer requirements under Article 18\n\n4. TIMELINE\nCompliance deadline: December 31, 2025\nRecommended completion: Q3 2025 to allow for testing and validation\n\nThe analysis indicates medium-high priority action is required to achieve full compliance with ACPR 2024-15.",
-          citations: [
-            { id: '1', text: 'ACPR Regulation 2024-15, Article 12: Climate Capital Requirements', source: 'ACPR Official Journal', url: '/regulations/acpr-2024-15' },
-            { id: '2', text: 'ACPR Regulation 2024-15, Article 15: Governance Requirements', source: 'ACPR Official Journal', url: '/regulations/acpr-2024-15' },
-            { id: '3', text: 'ACPR Regulation 2024-15, Article 18: Capital Buffer Specifications', source: 'ACPR Official Journal', url: '/regulations/acpr-2024-15' },
-            { id: '4', text: 'HexaBank RMP-2024-03, Section 4.2: Climate Risk Framework', source: 'Internal Policy Document', url: '/policies/rmp-2024-03' },
-            { id: '5', text: 'Compliance Gap: Quantitative climate exposure methodology missing', source: 'Automated Analysis', url: '/analysis/gaps' }
-          ],
-          timestamp: new Date(2025, 9, 30, 10, 31)
-        }
-      ]
-    }
-  ]);
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const [currentSessionId, setCurrentSessionId] = useState<string>('1');
+  // Start with empty state - no mock data
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Helper function to get user-specific localStorage keys
+  // Defined outside useEffect to avoid dependency issues
+  const getUserStorageKey = (key: string) => {
+    const userEmail = 'enzo.berreur@gmail.com';
+    return `${key}_${userEmail}`;
+  };
+
+  // Check if user is already authenticated (from localStorage) and load sessions in one go
+  useEffect(() => {
+    const savedAuth = localStorage.getItem('isAuthenticated');
+    const isAuth = savedAuth === 'true';
+    
+    if (isAuth) {
+      // Load sessions from localStorage (user-specific)
+      // First try user-specific key, then fallback to old key for migration
+      let savedSessions = localStorage.getItem(getUserStorageKey('chatSessions'));
+      let savedCurrentSessionId = localStorage.getItem(getUserStorageKey('currentSessionId'));
+      
+      // Migrate old sessions to user-specific key if they exist
+      if (!savedSessions) {
+        const oldSessions = localStorage.getItem('chatSessions');
+        const oldSessionId = localStorage.getItem('currentSessionId');
+        if (oldSessions) {
+          localStorage.setItem(getUserStorageKey('chatSessions'), oldSessions);
+          savedSessions = oldSessions;
+          // Clean up old keys
+          localStorage.removeItem('chatSessions');
+        }
+        if (oldSessionId) {
+          localStorage.setItem(getUserStorageKey('currentSessionId'), oldSessionId);
+          savedCurrentSessionId = oldSessionId;
+          localStorage.removeItem('currentSessionId');
+        }
+      }
+      
+      if (savedSessions) {
+        try {
+          const parsedSessions: Session[] = JSON.parse(savedSessions).map((session: any) => ({
+            ...session,
+            timestamp: new Date(session.timestamp),
+            messages: session.messages.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp),
+              citations: msg.citations || []
+            }))
+          }));
+          setSessions(parsedSessions);
+          
+          if (savedCurrentSessionId && parsedSessions.find(s => s.id === savedCurrentSessionId)) {
+            setCurrentSessionId(savedCurrentSessionId);
+          } else if (parsedSessions.length > 0) {
+            setCurrentSessionId(parsedSessions[0].id);
+          }
+        } catch (error) {
+          console.error('Failed to load sessions from localStorage:', error);
+        }
+      }
+    } else {
+      // For blurred background, create a dummy session
+      const newSession: Session = {
+        id: Date.now().toString(),
+        title: 'New Analysis',
+        timestamp: new Date(),
+        preview: 'Start regulatory analysis...',
+        messages: []
+      };
+      setSessions([newSession]);
+      setCurrentSessionId(newSession.id);
+    }
+    
+    setIsAuthenticated(isAuth);
+    setIsInitialized(true);
+  }, []);
+
+  // Load sessions when user logs in (after logout/login cycle)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // Skip if sessions are already loaded during initial mount (to avoid overwriting)
+    if (sessions.length > 0 && isInitialized) return;
+    
+    // Load sessions from localStorage (user-specific)
+    const savedSessions = localStorage.getItem(getUserStorageKey('chatSessions'));
+    const savedCurrentSessionId = localStorage.getItem(getUserStorageKey('currentSessionId'));
+    
+    if (savedSessions) {
+      try {
+        const parsedSessions: Session[] = JSON.parse(savedSessions).map((session: any) => ({
+          ...session,
+          timestamp: new Date(session.timestamp),
+          messages: session.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+            citations: msg.citations || []
+          }))
+        }));
+        
+        // This handles the case when user logs in after logout
+        setSessions(parsedSessions);
+        
+        if (savedCurrentSessionId && parsedSessions.find(s => s.id === savedCurrentSessionId)) {
+          setCurrentSessionId(savedCurrentSessionId);
+        } else if (parsedSessions.length > 0) {
+          setCurrentSessionId(parsedSessions[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load sessions from localStorage:', error);
+      }
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    localStorage.setItem('isAuthenticated', 'true');
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('isAuthenticated');
+    // Don't remove sessions - they are linked to the account and will persist
+    setSessions([]);
+    setCurrentSessionId(null);
+    setIsInitialized(false);
+  };
+
+  // Save sessions to localStorage whenever they change (but skip on initial load)
+  // Sessions are saved with user-specific key to persist across login/logout
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated) return;
+    // Always save sessions, even if empty (to preserve state)
+    localStorage.setItem(getUserStorageKey('chatSessions'), JSON.stringify(sessions));
+  }, [sessions, isInitialized, isAuthenticated]);
+
+  // Save current session ID to localStorage whenever it changes (but skip on initial load)
+  // Session ID is saved with user-specific key to persist across login/logout
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated) return;
+    if (currentSessionId) {
+      localStorage.setItem(getUserStorageKey('currentSessionId'), currentSessionId);
+    }
+  }, [currentSessionId, isInitialized, isAuthenticated]);
   const [metrics, setMetrics] = useState<ObservabilityMetrics>({
-    latency: 245,
+    latency: 0,
     errors: 0,
-    cost: 0.0023,
-    tokensUsed: 1247
+    cost: 0,
+    tokensUsed: 0,
+    citationsCount: 0,
+    averageSimilarityScore: 0
   });
   
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+
+  // Load documents from backend on mount
+  useEffect(() => {
+    const loadDocuments = async () => {
+      setDocumentsLoading(true);
+      try {
+        const apiDocs = await getDocuments();
+        const convertedDocs: UploadedDocument[] = apiDocs.map(doc => ({
+          id: doc.id,
+          name: doc.name,
+          size: doc.size,
+          uploadedAt: new Date(doc.uploaded_at),
+          type: doc.type,
+        }));
+        setDocuments(convertedDocs);
+        console.log(`✅ Loaded ${convertedDocs.length} documents from backend`);
+      } catch (error) {
+        // Log error but don't block the app
+        console.error('Failed to load documents from backend:', error);
+        // Keep empty array - user can still use the app
+        setDocuments([]);
+      } finally {
+        setDocumentsLoading(false);
+      }
+    };
+    loadDocuments();
+  }, []);
+
+  // Create initial session if none exists after loading (only if authenticated and no sessions in localStorage)
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (!isAuthenticated) return;
+    
+    // Wait a bit to let the session loading useEffect complete first
+    const timer = setTimeout(() => {
+      // Only create new session if no sessions exist and no current session
+      // This means no sessions were loaded from localStorage
+      if (sessions.length === 0 && currentSessionId === null) {
+        const savedSessions = localStorage.getItem(getUserStorageKey('chatSessions'));
+        // Double check localStorage before creating new session
+        if (!savedSessions || savedSessions === '[]') {
+          const newSession: Session = {
+            id: Date.now().toString(),
+            title: 'New Analysis',
+            timestamp: new Date(),
+            preview: 'Start regulatory analysis...',
+            messages: []
+          };
+          setSessions([newSession]);
+          setCurrentSessionId(newSession.id);
+        }
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [isInitialized, isAuthenticated, sessions.length, currentSessionId]);
+
+  const handleDocumentUpload = (doc: UploadedDocument) => {
+    setDocuments(prev => [...prev, doc]);
+  };
+
+  const handleDocumentRemove = (docId: string) => {
+    setDocuments(prev => prev.filter(doc => doc.id !== docId));
+  };
 
   const handleNewSession = () => {
     const newSession: Session = {
@@ -91,8 +281,21 @@ export default function App() {
       preview: 'Start regulatory analysis...',
       messages: []
     };
-    setSessions([newSession, ...sessions]);
+    setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
+  };
+
+  // Helper function to truncate text at word boundary
+  const truncateAtWord = (text: string, maxLength: number): string => {
+    if (text.length <= maxLength) return text;
+    
+    // Find the last space before maxLength
+    const truncated = text.slice(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    
+    // If we found a space, cut there; otherwise cut at maxLength
+    const cutPoint = lastSpace > 0 ? lastSpace : maxLength;
+    return text.slice(0, cutPoint) + '...';
   };
 
   const handleUpdateSessionMessages = (sessionId: string, messages: Message[]) => {
@@ -104,10 +307,10 @@ export default function App() {
               messages,
               // Update title and preview based on first user message
               title: messages.length > 0 && messages[0].role === 'user' 
-                ? messages[0].content.slice(0, 50) + (messages[0].content.length > 50 ? '...' : '')
+                ? truncateAtWord(messages[0].content, 50)
                 : session.title,
               preview: messages.length > 0 && messages[0].role === 'user'
-                ? messages[0].content.slice(0, 80) + (messages[0].content.length > 80 ? '...' : '')
+                ? truncateAtWord(messages[0].content, 80)
                 : session.preview
             }
           : session
@@ -116,8 +319,9 @@ export default function App() {
   };
 
   const handleDeleteSession = (sessionId: string) => {
-    // Don't allow deleting the last session
+    // Don't allow deleting the last session - create a new one instead
     if (sessions.length === 1) {
+      handleNewSession();
       return;
     }
 
@@ -143,37 +347,96 @@ export default function App() {
   const updateMetrics = (newMetrics: Partial<ObservabilityMetrics>) => {
     setMetrics(prev => ({ ...prev, ...newMetrics }));
   };
-  
-  const handleDocumentUpload = (doc: UploadedDocument) => {
-    setDocuments(prev => [...prev, doc]);
-  };
 
   return (
-    <div className="flex h-screen bg-neutral-50 overflow-hidden">
-      <SessionHistory
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onSelectSession={handleSelectSession}
-        onNewSession={handleNewSession}
-        onDeleteSession={handleDeleteSession}
-      />
-      
-      <div className="flex flex-col flex-1 min-w-0">
-        {currentSession && (
-          <ChatInterface
-            sessionId={currentSessionId}
-            messages={currentSession.messages}
-            onUpdateMessages={(messages) => handleUpdateSessionMessages(currentSessionId, messages)}
-            onUpdateMetrics={updateMetrics}
-            documents={documents}
-            onDocumentUpload={handleDocumentUpload}
+    <>
+      {!isAuthenticated ? (
+        <div className="h-screen w-screen relative overflow-hidden">
+          {/* Blurred background */}
+          <div className="absolute inset-0 bg-neutral-50 backdrop-blur-md" style={{ filter: 'blur(8px)' }}>
+            <div className="flex h-screen bg-neutral-50 overflow-hidden opacity-40">
+              <SessionHistory
+                sessions={sessions}
+                currentSessionId={currentSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onDeleteSession={handleDeleteSession}
+                onLogout={handleLogout}
+              />
+              
+              <div className="flex flex-col flex-1 min-w-0">
+                {currentSession ? (
+                  <ChatInterface
+                    sessionId={currentSessionId!}
+                    messages={currentSession.messages}
+                    onUpdateMessages={(messages) => handleUpdateSessionMessages(currentSessionId!, messages)}
+                    onUpdateMetrics={updateMetrics}
+                    documents={documents}
+                    onDocumentUpload={handleDocumentUpload}
+                    onDocumentRemove={handleDocumentRemove}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <p className="text-neutral-500 mb-4">No session selected</p>
+                      <button
+                        onClick={handleNewSession}
+                        className="px-4 py-2 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052CC]"
+                      >
+                        Create New Session
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <ObservabilityPanel metrics={metrics} />
+              </div>
+            </div>
+          </div>
+          {/* Login Modal */}
+          <LoginModal isOpen={true} onLogin={handleLogin} />
+        </div>
+      ) : (
+        <div className="flex h-screen bg-neutral-50 overflow-hidden relative">
+          <SessionHistory
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onDeleteSession={handleDeleteSession}
+            onLogout={handleLogout}
           />
-        )}
-        
-        <ObservabilityPanel metrics={metrics} />
-      </div>
-      
-      <Toaster />
-    </div>
+          
+          <div className="flex flex-col flex-1 min-w-0 relative">
+            {currentSession ? (
+              <ChatInterface
+                sessionId={currentSessionId!}
+                messages={currentSession.messages}
+                onUpdateMessages={(messages) => handleUpdateSessionMessages(currentSessionId!, messages)}
+                onUpdateMetrics={updateMetrics}
+                documents={documents}
+                onDocumentUpload={handleDocumentUpload}
+                onDocumentRemove={handleDocumentRemove}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <p className="text-neutral-500 mb-4">No session selected</p>
+                  <button
+                    onClick={handleNewSession}
+                    className="px-4 py-2 bg-[#0066FF] text-white rounded-lg hover:bg-[#0052CC]"
+                  >
+                    Create New Session
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <ObservabilityPanel metrics={metrics} />
+          </div>
+          <Toaster />
+        </div>
+      )}
+    </>
   );
 }

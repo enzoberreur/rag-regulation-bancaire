@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react';
 import { Button } from './ui/button';
-import { FileText, Upload, X, File, ShieldCheck, BookOpen, FolderOpen, CheckCircle2 } from 'lucide-react';
-import { Badge } from './ui/badge';
+import { FileText, Upload, X, File, FolderOpen, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { Separator } from './ui/separator';
+import { uploadDocument, deleteDocument, type UploadedDocument as ApiUploadedDocument } from '../services/api';
 
 interface UploadedDocument {
   id: string;
@@ -21,7 +21,6 @@ interface DocumentUploadProps {
 
 export function DocumentUpload({ documents, onDocumentUpload, onDocumentRemove }: DocumentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedType, setSelectedType] = useState<'regulation' | 'policy' | 'document'>('regulation');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const formatFileSize = (bytes: number) => {
@@ -30,22 +29,40 @@ export function DocumentUpload({ documents, onDocumentUpload, onDocumentRemove }
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      const doc: UploadedDocument = {
-        id: Date.now().toString() + Math.random(),
-        name: file.name,
-        size: file.size,
-        uploadedAt: new Date(),
-        type: selectedType
-      };
-      onDocumentUpload(doc);
-      toast.success(`${file.name} uploaded`, {
-        description: `Classified as ${selectedType}`
-      });
-    });
+    for (const file of Array.from(files)) {
+      try {
+        // Show loading toast
+        const loadingToast = toast.loading(`Uploading ${file.name}...`);
+        
+        // Upload to backend
+        const uploadedDoc = await uploadDocument(file);
+        
+        // Convert API format to frontend format
+        const doc: UploadedDocument = {
+          id: uploadedDoc.id,
+          name: uploadedDoc.name,
+          size: uploadedDoc.size,
+          uploadedAt: new Date(uploadedDoc.uploaded_at),
+          type: uploadedDoc.type,
+        };
+        
+        // Update UI
+        onDocumentUpload(doc);
+        
+        // Update toast
+        toast.success(`${file.name} uploaded`, {
+          id: loadingToast,
+          description: 'Processing for RAG...',
+        });
+      } catch (error) {
+        toast.error(`Failed to upload ${file.name}`, {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -68,125 +85,44 @@ export function DocumentUpload({ documents, onDocumentUpload, onDocumentRemove }
     handleFileSelect(e.dataTransfer.files);
   };
 
-  const handleRemove = (id: string, name: string) => {
-    if (onDocumentRemove) {
-      onDocumentRemove(id);
-    }
-    toast.success('Document removed', {
-      description: name
-    });
-  };
-
-  const getDocumentIcon = (type: string) => {
-    switch (type) {
-      case 'regulation':
-        return <ShieldCheck className="w-4 h-4 text-[#0066FF]" />;
-      case 'policy':
-        return <BookOpen className="w-4 h-4 text-emerald-600" />;
-      default:
-        return <File className="w-4 h-4 text-neutral-600" />;
-    }
-  };
-
-  const getDocumentBadge = (type: string) => {
-    switch (type) {
-      case 'regulation':
-        return <Badge variant="outline" className="bg-[#E6F0FF] text-[#0066FF] border-[#0066FF]/20 text-xs">Regulation</Badge>;
-      case 'policy':
-        return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">Policy</Badge>;
-      default:
-        return <Badge variant="outline" className="bg-neutral-50 text-neutral-600 border-neutral-200 text-xs">Document</Badge>;
+  const handleRemove = async (id: string, name: string) => {
+    try {
+      // Delete from backend
+      await deleteDocument(id);
+      
+      // Update UI
+      if (onDocumentRemove) {
+        onDocumentRemove(id);
+      }
+      
+      toast.success('Document removed', {
+        description: name,
+      });
+    } catch (error) {
+      toast.error(`Failed to remove ${name}`, {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   };
 
-  const regulations = documents.filter(d => d.type === 'regulation');
-  const policies = documents.filter(d => d.type === 'policy');
-  const otherDocs = documents.filter(d => d.type === 'document');
+  const getDocumentIcon = () => {
+    return <File className="w-4 h-4 text-neutral-600" />;
+  };
 
   return (
     <div className="flex flex-col h-full">
       {/* Header Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="bg-gradient-to-br from-[#E6F0FF] to-[#F0F7FF] rounded-xl p-4 border border-[#0066FF]/10">
-          <div className="flex items-center gap-2 mb-1">
-            <ShieldCheck className="w-4 h-4 text-[#0066FF]" />
-            <span className="text-xs text-neutral-600">Regulations</span>
-          </div>
-          <div className="text-2xl text-[#0066FF]">{regulations.length}</div>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 rounded-xl p-4 border border-emerald-200/50">
-          <div className="flex items-center gap-2 mb-1">
-            <BookOpen className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs text-neutral-600">Policies</span>
-          </div>
-          <div className="text-2xl text-emerald-600">{policies.length}</div>
-        </div>
-        <div className="bg-gradient-to-br from-neutral-50 to-neutral-50/30 rounded-xl p-4 border border-neutral-200">
-          <div className="flex items-center gap-2 mb-1">
-            <File className="w-4 h-4 text-neutral-600" />
-            <span className="text-xs text-neutral-600">Other</span>
-          </div>
-          <div className="text-2xl text-neutral-700">{otherDocs.length}</div>
-        </div>
-      </div>
-
-      {/* Document Type Selection */}
-      <div className="mb-6">
-        <label className="text-sm text-neutral-700 mb-3 block flex items-center gap-2">
-          <div className="w-1 h-4 bg-[#0066FF] rounded-full"></div>
-          Classification Type
-        </label>
-        <div className="grid grid-cols-3 gap-2 p-1 bg-neutral-100 rounded-lg">
-          <button
-            onClick={() => setSelectedType('regulation')}
-            className={`px-4 py-2.5 rounded-md text-sm transition-all relative overflow-hidden group ${
-              selectedType === 'regulation'
-                ? 'bg-[#0066FF] text-white shadow-md'
-                : 'text-neutral-700 hover:bg-white hover:shadow-sm'
-            }`}
-          >
-            {selectedType === 'regulation' && (
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
-            )}
-            <div className="flex items-center gap-2 justify-center relative z-10">
-              <ShieldCheck className="w-4 h-4" />
-              <span>Regulation</span>
+      {documents.length > 0 && (
+        <div className="mb-6">
+          <div className="bg-gradient-to-br from-[#E6F0FF] to-[#F0F7FF] rounded-xl p-4 border border-[#0066FF]/10">
+            <div className="flex items-center gap-2 mb-1">
+              <File className="w-4 h-4 text-[#0066FF]" />
+              <span className="text-xs text-neutral-600">Total Documents</span>
             </div>
-          </button>
-          <button
-            onClick={() => setSelectedType('policy')}
-            className={`px-4 py-2.5 rounded-md text-sm transition-all relative overflow-hidden group ${
-              selectedType === 'policy'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-neutral-700 hover:bg-white hover:shadow-sm'
-            }`}
-          >
-            {selectedType === 'policy' && (
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
-            )}
-            <div className="flex items-center gap-2 justify-center relative z-10">
-              <BookOpen className="w-4 h-4" />
-              <span>Policy</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setSelectedType('document')}
-            className={`px-4 py-2.5 rounded-md text-sm transition-all relative overflow-hidden group ${
-              selectedType === 'document'
-                ? 'bg-neutral-700 text-white shadow-md'
-                : 'text-neutral-700 hover:bg-white hover:shadow-sm'
-            }`}
-          >
-            {selectedType === 'document' && (
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
-            )}
-            <div className="flex items-center gap-2 justify-center relative z-10">
-              <File className="w-4 h-4" />
-              <span>Document</span>
-            </div>
-          </button>
+            <div className="text-2xl text-[#0066FF]">{documents.length}</div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Upload Area */}
       <div
@@ -222,7 +158,7 @@ export function DocumentUpload({ documents, onDocumentUpload, onDocumentRemove }
           </div>
           
           <p className="text-neutral-900 mb-2">
-            {isDragging ? 'Drop your files here' : 'Drag & drop regulatory documents'}
+            {isDragging ? 'Drop your files here' : 'Drag & drop documents'}
           </p>
           <p className="text-neutral-500 text-sm mb-6">
             or click below to browse • PDF, DOCX, TXT • Max 50MB
@@ -252,57 +188,10 @@ export function DocumentUpload({ documents, onDocumentUpload, onDocumentRemove }
       {documents.length > 0 && (
         <>
           <Separator className="my-6" />
-          <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-            {regulations.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3 sticky top-0 bg-white py-2 z-10">
-                  <div className="w-1.5 h-5 bg-gradient-to-b from-[#0066FF] to-[#00D4FF] rounded-full shadow-sm"></div>
-                  <h4 className="text-sm text-neutral-700">Regulations</h4>
-                  <Badge variant="secondary" className="ml-auto bg-[#E6F0FF] text-[#0066FF] border-none">
-                    {regulations.length}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {regulations.map(doc => (
-                    <DocumentItem key={doc.id} doc={doc} onRemove={handleRemove} getIcon={getDocumentIcon} getBadge={getDocumentBadge} formatSize={formatFileSize} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {policies.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3 sticky top-0 bg-white py-2 z-10">
-                  <div className="w-1.5 h-5 bg-gradient-to-b from-emerald-500 to-emerald-600 rounded-full shadow-sm"></div>
-                  <h4 className="text-sm text-neutral-700">Internal Policies</h4>
-                  <Badge variant="secondary" className="ml-auto bg-emerald-50 text-emerald-700 border-none">
-                    {policies.length}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {policies.map(doc => (
-                    <DocumentItem key={doc.id} doc={doc} onRemove={handleRemove} getIcon={getDocumentIcon} getBadge={getDocumentBadge} formatSize={formatFileSize} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {otherDocs.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3 sticky top-0 bg-white py-2 z-10">
-                  <div className="w-1.5 h-5 bg-gradient-to-b from-neutral-400 to-neutral-500 rounded-full shadow-sm"></div>
-                  <h4 className="text-sm text-neutral-700">Other Documents</h4>
-                  <Badge variant="secondary" className="ml-auto bg-neutral-100 text-neutral-700 border-none">
-                    {otherDocs.length}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {otherDocs.map(doc => (
-                    <DocumentItem key={doc.id} doc={doc} onRemove={handleRemove} getIcon={getDocumentIcon} getBadge={getDocumentBadge} formatSize={formatFileSize} />
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            {documents.map(doc => (
+              <DocumentItem key={doc.id} doc={doc} onRemove={handleRemove} getIcon={getDocumentIcon} formatSize={formatFileSize} />
+            ))}
           </div>
         </>
       )}
@@ -323,20 +212,18 @@ function DocumentItem({
   doc, 
   onRemove, 
   getIcon, 
-  getBadge, 
   formatSize 
 }: { 
   doc: UploadedDocument; 
   onRemove: (id: string, name: string) => void;
-  getIcon: (type: string) => JSX.Element;
-  getBadge: (type: string) => JSX.Element;
+  getIcon: () => JSX.Element;
   formatSize: (bytes: number) => string;
 }) {
   return (
     <div className="border border-neutral-200 rounded-xl p-3.5 flex items-center justify-between group hover:border-[#0066FF]/30 hover:bg-gradient-to-r hover:from-neutral-50/50 hover:to-transparent transition-all hover:shadow-sm">
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-neutral-50 to-neutral-100 group-hover:from-white group-hover:to-neutral-50 flex items-center justify-center flex-shrink-0 transition-all shadow-sm">
-          {getIcon(doc.type)}
+          {getIcon()}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -348,9 +235,6 @@ function DocumentItem({
             <span className="text-neutral-300">•</span>
             <p className="text-xs text-neutral-400">{doc.uploadedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
           </div>
-        </div>
-        <div className="flex-shrink-0">
-          {getBadge(doc.type)}
         </div>
       </div>
       <Button

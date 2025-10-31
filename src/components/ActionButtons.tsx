@@ -2,6 +2,11 @@ import { Button } from './ui/button';
 import { Copy, Download, Check } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { useState } from 'react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from './ui/tooltip';
 
 interface Citation {
   id: string;
@@ -107,28 +112,43 @@ export function ActionButtons({ content, citations }: ActionButtonsProps) {
 
   return (
     <div className="flex gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleCopy}
-        className="h-9 text-xs hover:bg-[#E6F0FF] hover:text-[#0066FF] transition-smooth group"
-      >
-        {copied ? (
-          <Check className="w-3.5 h-3.5 mr-1.5 text-green-600" />
-        ) : (
-          <Copy className="w-3.5 h-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
-        )}
-        {copied ? 'Copied' : 'Copy Analysis'}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleDownload}
-        className="h-9 text-xs hover:bg-[#E6F0FF] hover:text-[#0066FF] transition-smooth group"
-      >
-        <Download className="w-3.5 h-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
-        Download Report
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleCopy}
+            className="h-9 w-9 border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 rounded-lg transition-smooth group"
+            aria-label={copied ? 'Copied' : 'Copy Analysis'}
+          >
+            {copied ? (
+              <Check className="w-4 h-4 text-green-600" />
+            ) : (
+              <Copy className="w-4 h-4 text-neutral-600 group-hover:text-neutral-900" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{copied ? 'Copied' : 'Copy Analysis'}</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleDownload}
+            className="h-9 w-9 border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50 rounded-lg transition-smooth group"
+            aria-label="Download Report"
+          >
+            <Download className="w-4 h-4 text-neutral-600 group-hover:text-neutral-900" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Download Report</p>
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
