@@ -104,6 +104,13 @@ export async function getDocuments(): Promise<UploadedDocument[]> {
 }
 
 /**
+ * Get document view URL
+ */
+export function getDocumentViewUrl(documentId: string): string {
+  return `${API_BASE_URL}/api/documents/${documentId}/view`;
+}
+
+/**
  * Delete a document
  */
 export async function deleteDocument(documentId: string): Promise<void> {

@@ -212,8 +212,7 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
         // Skip [DONE] marker
         if (trimmedChunk === '[DONE]') continue;
         
-        // IMPORTANT: Clean chunk while preserving spaces between words
-        // The chunk should be plain text content (no SSE prefix, no trailing newlines)
+        // Backend sends formatted text with encoded newlines (to survive SSE chunking)
         let cleanChunk = chunk;
         
         // Remove SSE prefix if present
@@ -221,47 +220,10 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
           cleanChunk = cleanChunk.slice(6);
         }
         
-        // Remove trailing newlines/whitespace that are from SSE format, not content
-        // This prevents words from being separated by newlines
-        cleanChunk = cleanChunk.replace(/[\r\n]+$/, '');
+        // Skip truly empty chunks
+        if (cleanChunk.trim() === '') continue;
         
-        // Also remove leading newlines that might be artifacts
-        cleanChunk = cleanChunk.replace(/^[\r\n]+/, '');
-        
-        // Skip empty chunks after cleaning
-        if (!cleanChunk.trim()) continue;
-        
-        // Remove ALL "data:" patterns aggressively
-        // Handle cases like:
-        // - "data: " followed by space -> remove
-        // - "data:2024-15" -> "2024-15"
-        // - "data:2,5%" -> "2,5%" (but preserve space before if word exists)
-        // - "data: - Établir" -> "- Établir"
-        // Preserve words like "database" or "data analysis" only if followed by letters
-        
-        // IMPORTANT: Order matters! First, handle cases where a letter precedes "data:" followed by numbers/dates
-        // This adds space before the number: "représenterdata:2,5%" -> "représenter 2,5%"
-        // Also handles dates: "Regulationdata:2024-15" -> "Regulation 2024-15"
-        // Also handles dates with commas: "Decemberdata:31,2025" -> "December 31,2025"
-        cleanChunk = cleanChunk.replace(/([a-zA-ZÀ-ÿ])data:([0-9,\-:%]+)/gi, '$1 $2');
-        // Also handle cases where "data:" was already removed but space is missing
-        // "Regulation2024-15" -> "Regulation 2024-15"
-        cleanChunk = cleanChunk.replace(/([a-zA-ZÀ-ÿ])([0-9]{4}-[0-9]{1,2})/g, '$1 $2');
-        // "December31,2025" -> "December 31,2025" (word followed by date pattern)
-        cleanChunk = cleanChunk.replace(/([a-zA-ZÀ-ÿ])([0-9]{1,2},[0-9]{4})/g, '$1 $2');
-        // "of2.5%" -> "of 2.5%" or "to5%" -> "to 5%" (word followed by percentage)
-        cleanChunk = cleanChunk.replace(/([a-zA-ZÀ-ÿ])([0-9]+[.,][0-9]+%)/gi, '$1 $2');
-        cleanChunk = cleanChunk.replace(/([a-zA-ZÀ-ÿ])([0-9]+%)/gi, '$1 $2');
-        // Then remove "data:" at start of line or after newline
-        cleanChunk = cleanChunk.replace(/(^|\n|\r)data:\s*/gim, '$1');
-        // Remove "data:" followed by any combination of digits, commas, hyphens, colons, spaces, or special chars
-        // This catches remaining cases like "data:2024-15", "data:2,5%", "data: -", etc.
-        cleanChunk = cleanChunk.replace(/\bdata:([0-9,\-:%\s]+)/gi, '$1');
-        // Remove standalone "data:" followed by space (word boundary ensures we don't match "database")
-        cleanChunk = cleanChunk.replace(/\bdata:\s+/gi, '');
-        // Last resort: remove any remaining "data:" that's not part of a word, preserving spaces
-        cleanChunk = cleanChunk.replace(/([^a-zA-Z])data:([^a-zA-Z])/gi, '$1$2');
-        
+        // Accumulate chunks (SSE splits the content into multiple pieces)
         streamedContent += cleanChunk;
         onUpdateMessages([
           ...updatedMessages,
@@ -289,49 +251,13 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
       finalContent = finalContent.replace(/Source:\s*[^\n]+/gi, '');
       
       // Remove ALL "data:" patterns aggressively
-      // Handle cases like:
-      // - "data: " followed by space -> remove
-      // - "data:2024-15" -> "2024-15"
-      // - "data:2,5%" -> "2,5%" (but preserve space before if word exists)
-      // - "data: - Établir" -> "- Établir"
-      // Preserve words like "database" or "data analysis" only if followed by letters
-      
-      // IMPORTANT: Order matters! First, handle cases where a letter precedes "data:" followed by numbers/dates
-      // This adds space before the number: "représenterdata:2,5%" -> "représenter 2,5%"
-      // Also handles dates: "Regulationdata:2024-15" -> "Regulation 2024-15"
-      // Also handles dates with commas: "Decemberdata:31,2025" -> "December 31,2025"
-      finalContent = finalContent.replace(/([a-zA-ZÀ-ÿ])data:([0-9,\-:%]+)/gi, '$1 $2');
-      // Also handle cases where "data:" was already removed but space is missing
-      // "Regulation2024-15" -> "Regulation 2024-15"
-      finalContent = finalContent.replace(/([a-zA-ZÀ-ÿ])([0-9]{4}-[0-9]{1,2})/g, '$1 $2');
-      // "December31,2025" -> "December 31,2025" (word followed by date pattern)
-      finalContent = finalContent.replace(/([a-zA-ZÀ-ÿ])([0-9]{1,2},[0-9]{4})/g, '$1 $2');
-      // "of2.5%" -> "of 2.5%" or "to5%" -> "to 5%" (word followed by percentage)
-      finalContent = finalContent.replace(/([a-zA-ZÀ-ÿ])([0-9]+[.,][0-9]+%)/gi, '$1 $2');
-      finalContent = finalContent.replace(/([a-zA-ZÀ-ÿ])([0-9]+%)/gi, '$1 $2');
-      // Then remove "data:" at start of line or after newline
-      finalContent = finalContent.replace(/(^|\n|\r)data:\s*/gim, '$1');
-      // Remove "data:" followed by any combination of digits, commas, hyphens, colons, spaces, or special chars
-      // This catches remaining cases like "data:2024-15", "data:2,5%", "data: -", etc.
-      finalContent = finalContent.replace(/\bdata:([0-9,\-:%\s]+)/gi, '$1');
-      // Remove standalone "data:" followed by space (word boundary ensures we don't match "database")
-      finalContent = finalContent.replace(/\bdata:\s+/gi, '');
-      // Last resort: remove any remaining "data:" that's not part of a word, preserving spaces
-      finalContent = finalContent.replace(/([^a-zA-Z])data:([^a-zA-Z])/gi, '$1$2');
-      
-      // Clean up multiple spaces (but preserve newlines and single spaces)
-      // Only replace 2+ consecutive spaces/tabs with a single space, but preserve spaces before newlines
-      // This ensures we don't remove spaces that are intentionally before line breaks
-      finalContent = finalContent.replace(/[ \t]{2,}(?![ \t]*[\n\r])/g, ' ');
-      // Clean up multiple newlines (keep max 2) - preserve intentional line breaks
-      finalContent = finalContent.replace(/\r\n/g, '\n'); // Normalize Windows line endings
-      finalContent = finalContent.replace(/\r/g, '\n'); // Normalize Mac line endings
-      finalContent = finalContent.replace(/\n{3,}/g, '\n\n');
-      // Trim only leading/trailing whitespace, not internal spaces or newlines
+      // Decode the newline markers sent by backend
+      // Backend encodes newlines to survive SSE chunking, we decode them here
+      finalContent = finalContent.replace(/<<<BLANK_LINE>>>/g, '\n\n');
+      finalContent = finalContent.replace(/<<<LINE_BREAK>>>/g, '\n');
       finalContent = finalContent.trim();
       
       // Final update with cleaned content and citations (only once at the end)
-      console.log('✅ Final message update with citations:', citations.length > 0 ? citations : 'none');
       onUpdateMessages([
         ...updatedMessages,
         { ...assistantMessage, content: finalContent, citations }
@@ -391,23 +317,31 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
       <div className="flex-1 overflow-y-auto px-8" ref={scrollRef}>
         <div className="max-w-4xl mx-auto py-8 space-y-8">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-20">
+            <div className="flex flex-col items-start justify-start h-full py-20">
               <div className="w-16 h-16 rounded-2xl bg-[#E6F0FF] flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-[#0066FF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-neutral-900 mb-2">Start Regulatory Analysis</h2>
-              <p className="text-sm text-neutral-500 max-w-md mb-4">
-                Ask questions about ACPR regulations, ECB guidelines, EU AI Act compliance, or policy mapping
+              <h2 className="text-neutral-900 mb-2 text-2xl font-semibold">Welcome to HexaBank Compliance Assistant</h2>
+              <p className="text-sm text-neutral-500 max-w-2xl mb-6">
+                Get instant answers about regulatory compliance, banking policies, and risk management guidelines. Upload your documents and ask questions to receive AI-powered analysis with relevant citations.
               </p>
-              {documents.length === 0 && (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg max-w-md">
-                  <p className="text-sm text-amber-800">
-                    💡 <strong>Tip:</strong> Upload documents first to get the most accurate answers. Use the 📎 button below to upload regulatory documents.
+              
+              {/* Example prompt */}
+              <div className="mt-4 max-w-2xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Try asking</span>
+                </div>
+                <div className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all">
+                  <p className="text-sm text-neutral-600 leading-relaxed italic">
+                    "What are the key requirements of ACPR Regulation 2024-15 regarding the Capital Buffer for climate-related risks? Please detail the calculation methodology, governance requirements, and compliance timeline."
                   </p>
                 </div>
-              )}
+              </div>
             </div>
           ) : (
             messages.map(message => (

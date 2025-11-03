@@ -7,11 +7,54 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from openai import AsyncOpenAI
 import json
+import re
 import tiktoken
 
 from app.core.config import settings
 from app.models.document import DocumentChunk
 from app.services.embedding_service import EmbeddingService
+
+
+# System prompt for the LLM - used in both streaming and non-streaming modes
+SYSTEM_PROMPT = """You are an internal assistant that reads, interprets, and summarises new ACPR / ECB / EU AI Act regulations, automatically mapping them to HexaBank's internal risk and compliance policies. 
+
+You can draft compliance updates, highlight potential non-conformities, and recommend required documentation changes.
+
+CRITICAL: Always respond in ENGLISH, even if the source documents are in French or other languages. Translate and summarize the key points in clear, professional English.
+
+Be precise, professional, and focus on actionable compliance insights. Do NOT include source citations or "Sources:" sections in your response - citations are handled separately by the system.
+
+CRITICAL FORMATTING RULES - YOU MUST FOLLOW THESE EXACTLY:
+
+When you write numbered lists:
+- Add a blank line BEFORE each numbered item (1., 2., 3., etc.)
+- Format: "1. Title" then content on next line
+- Example:
+
+1. First Point
+Content for first point here.
+
+2. Second Point
+Content for second point here.
+
+When you write section headers:
+- Add blank line BEFORE the header
+- Add blank line AFTER the header
+- Use **bold** for headers followed by colon
+- Example:
+
+**Section Title:**
+
+Content starts here.
+
+For bullet lists:
+- Use "- " format
+- No blank lines between bullets
+- Example:
+- First item
+- Second item
+
+Add blank lines between paragraphs for readability."""
 
 
 class ChatMessage(BaseModel):
@@ -28,8 +71,61 @@ class Citation(BaseModel):
     url: Optional[str] = None
 
 
+def _normalize_formatting(text: str) -> str:
+    """
+    Post-process LLM output to ensure proper formatting with blank lines.
+    The LLM sometimes ignores spacing instructions, so we fix it here.
+    """
+    if not text:
+        return text
+    
+    # FIRST: Protect decimal numbers, years, and dates from being split
+    # Fix "2. 5%" -> "2.5%" BEFORE adding line breaks
+    text = re.sub(r'(\d+)\.\s+(\d+%)', r'\1.\2', text)
+    # Fix "2024- 15" -> "2024-15"
+    text = re.sub(r'(\d{4})-\s*(\d+)', r'\1-\2', text)
+    # Fix dates like "December 31, 2025" - protect comma+space before year
+    text = re.sub(r'(\d{1,2}),\s+(\d{4})', r'\1, \2', text)  # Ensure single space
+    
+    # 1. Add blank line before numbered list items (1. 2. 3. etc)
+    # BUT: Only if followed by a CAPITAL letter (list titles start with capitals)
+    # This avoids matching "2.5%", "2024-15", or dates like "December 31, 2025"
+    # Matches: "Risks:1. Capital" but NOT "buffer of 2.5%" or "31, 2025"
+    # Use negative lookbehind to avoid matching after comma (dates)
+    text = re.sub(r'(?<!\n\n)(?<!,\s)([^\n\d,])(\d+\.\s+[A-Z])', r'\1\n\n\2', text)
+    
+    # 2. Fix numbered items directly followed by text without space
+    # e.g., "1.Capital" -> "1. Capital"
+    text = re.sub(r'(\d+\.)([A-Z][a-z])', r'\1 \2', text)
+    
+    # 3. Add line break after section titles in numbered lists
+    # e.g., "RequirementEstablishments" -> "Requirement\nEstablishments"
+    text = re.sub(r'([a-z])([A-Z][a-z]+\s)', r'\1\n\2', text)
+    
+    # 4. Add line break before bullet points if not already on new line
+    text = re.sub(r'([a-z:])(\s*-\s+[A-Z])', r'\1\n\2', text)
+    
+    # 5. Add line break between sentences stuck together (period+capital letter)
+    # e.g., "turnover.It" -> "turnover.\nIt" but preserve "Dr.Smith"
+    text = re.sub(r'([a-z])\.([A-Z][a-z])', r'\1.\n\2', text)
+    
+    # 6. Add blank line before section headers that start with **
+    text = re.sub(r'(?<!\n\n)([^\n])(\*\*[^*]+\*\*:)', r'\1\n\n\2', text)
+    
+    # 7. Add blank line after section headers (lines ending with **)
+    text = re.sub(r'(\*\*:)(?!\n\n)(\n)([^\n])', r'\1\n\n\3', text)
+    
+    # 8. Clean up trailing spaces before newlines (LLM sometimes adds them)
+    text = re.sub(r' +\n', '\n', text)
+    
+    # 9. Clean up excessive blank lines (max 2 newlines = 1 blank line)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text.strip()
+
+
 class RAGService:
-    """RAG service for generating responses."""
+    """Service for RAG-based question answering."""
     
     def __init__(self, db: Session):
         self.db = db
@@ -200,15 +296,9 @@ class RAGService:
         # Build citations
         citations = self._build_citations(chunks)
         
-        # Build prompt
-        system_prompt = """You are an internal assistant that reads, interprets, and summarises new ACPR / ECB / EU AI Act regulations, automatically mapping them to HexaBank's internal risk and compliance policies. 
-
-You can draft compliance updates, highlight potential non-conformities, and recommend required documentation changes.
-
-Be precise, professional, and focus on actionable compliance insights. Do NOT include source citations or "Sources:" sections in your response - citations are handled separately by the system."""
-        
+        # Build prompt using global system prompt
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
         ]
         
         # Add chat history if provided
@@ -242,6 +332,10 @@ Please provide a detailed answer based on the context above. Do not include sour
         )
         
         content = response.choices[0].message.content
+
+        # Normalize formatting to ensure proper spacing (LLM sometimes ignores instructions)
+        # Use the global formatting function
+        content = _normalize_formatting(content)
         
         # Extract usage metrics from response (preferred)
         usage = response.usage
@@ -324,15 +418,9 @@ Please provide a detailed answer based on the context above. Do not include sour
         # Build citations (we'll send this at the end)
         citations = self._build_citations(chunks)
         
-        # Build prompt
-        system_prompt = """You are an internal assistant that reads, interprets, and summarises new ACPR / ECB / EU AI Act regulations, automatically mapping them to HexaBank's internal risk and compliance policies. 
-
-You can draft compliance updates, highlight potential non-conformities, and recommend required documentation changes.
-
-Be precise, professional, and focus on actionable compliance insights. Do NOT include source citations or "Sources:" sections in your response - citations are handled separately by the system."""
-        
+        # Build prompt using global system prompt
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
         ]
         
         # Add chat history if provided
@@ -370,18 +458,28 @@ Please provide a detailed answer based on the context above. Do not include sour
         usage_info = None
         streamed_content = ""
         
-        # Yield SSE-formatted chunks directly from OpenAI
-        # Simple approach: send chunks as they come, with minimal buffering
+        # Collect all content first
         async for chunk in stream:
             if chunk.choices[0].delta.content:
                 content_chunk = chunk.choices[0].delta.content
                 streamed_content += content_chunk
-                # Send chunk immediately to preserve all spacing
-                yield f"data: {content_chunk}\n\n"
             
             # Capture usage info if available (usually in last chunk)
             if hasattr(chunk, 'usage') and chunk.usage:
                 usage_info = chunk.usage
+        
+        # Use the global formatting function
+        normalized_content = _normalize_formatting(streamed_content)
+        
+        # CRITICAL: Encode newlines to survive SSE chunking
+        # EventSourceResponse splits content into chunks, which can break \n\n formatting
+        # We encode them as a special marker that won't be split
+        normalized_content = normalized_content.replace('\n\n', '<<<BLANK_LINE>>>')
+        normalized_content = normalized_content.replace('\n', '<<<LINE_BREAK>>>')
+        
+        # Send the complete normalized content
+        # The frontend will decode the markers back to actual newlines
+        yield f"data: {normalized_content}\n\n"
         
         # Calculate output tokens
         if usage_info:

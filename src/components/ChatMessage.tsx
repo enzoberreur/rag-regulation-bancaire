@@ -28,11 +28,55 @@ interface ChatMessageProps {
 
 // Simple markdown renderer for basic formatting
 function renderMarkdown(text: string): React.ReactNode {
-  // Normalize multiple consecutive newlines to maximum 2 (for paragraph breaks)
-  // This ensures consistent spacing while preserving intentional breaks
-  let normalizedText = text.replace(/\n{3,}/g, '\n\n');
+  // Backend sends text with \n for line breaks and \n\n for paragraph spacing
+  // We need to convert \n to <br/> elements for proper rendering
   
-  // Split by lines to handle multiline content
+  const elements: React.ReactNode[] = [];
+  let key = 0;
+  
+  // Split by lines first to handle newlines properly
+  const lines = text.split('\n');
+  
+  lines.forEach((line, lineIndex) => {
+    if (lineIndex > 0) {
+      // Add a <br/> for each newline
+      elements.push(<br key={`br-${key++}`} />);
+    }
+    
+    // Process bold text in this line
+    const lineParts: React.ReactNode[] = [];
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = boldRegex.exec(line)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        lineParts.push(line.slice(lastIndex, match.index));
+      }
+      // Add bold text
+      lineParts.push(<strong key={`bold-${key++}`} className="font-semibold text-neutral-900">{match[1]}</strong>);
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text in line
+    if (lastIndex < line.length) {
+      lineParts.push(line.slice(lastIndex));
+    } else if (lineParts.length === 0 && line === '') {
+      // Empty line - just keep the <br/> we added
+    }
+    
+    elements.push(...lineParts);
+  });
+  
+  return <>{elements}</>;
+}
+
+// Keep old implementation for reference but not used
+function renderMarkdown_OLD(text: string): React.ReactNode {
+  let normalizedText = text;
+  
+  // Split by lines and process
   const lines = normalizedText.split('\n');
   
   // Process lines and group consecutive list items
@@ -45,6 +89,43 @@ function renderMarkdown(text: string): React.ReactNode {
     // Skip empty lines but preserve them for spacing (only one at a time)
     if (line.trim() === '') {
       processedLines.push(<br key={`empty-${i}`} />);
+      i++;
+      continue;
+    }
+    
+    // Handle bullet points (•, -, *, or ▪)
+    const bulletMatch = line.match(/^([•\-\*▪]\s+)(.+)$/);
+    if (bulletMatch) {
+      const [, bullet, content] = bulletMatch;
+      // Process content for bold text
+      const parts: React.ReactNode[] = [];
+      let lastIndex = 0;
+      const boldRegex = /\*\*([^*]+)\*\*/g;
+      let match;
+      let key = 0;
+      
+      while ((match = boldRegex.exec(content)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(content.slice(lastIndex, match.index));
+        }
+        parts.push(<strong key={key++}>{match[1]}</strong>);
+        lastIndex = match.index + match[0].length;
+      }
+      
+      if (lastIndex < content.length) {
+        parts.push(content.slice(lastIndex));
+      }
+      
+      processedLines.push(
+        <div key={i} className="mb-3 last:mb-0">
+          <div className="flex items-start gap-3">
+            <span className="text-neutral-600 mt-1 flex-shrink-0 min-w-[1rem]">•</span>
+            <div className="flex-1 leading-relaxed text-neutral-800">
+              {parts.length > 0 ? parts : content}
+            </div>
+          </div>
+        </div>
+      );
       i++;
       continue;
     }
@@ -74,11 +155,44 @@ function renderMarkdown(text: string): React.ReactNode {
       
       processedLines.push(
         <div key={i} className="mb-4 last:mb-0">
-          <div className="flex items-start gap-2">
-            <span className="font-medium text-neutral-700 mt-0.5 flex-shrink-0">{number}</span>
-            <div className="flex-1 leading-relaxed">
+          <div className="flex items-start gap-3">
+            <span className="font-medium text-neutral-700 mt-0.5 flex-shrink-0 min-w-[1.5rem]">{number}</span>
+            <div className="flex-1 leading-relaxed text-neutral-800">
               {parts.length > 0 ? parts : content}
             </div>
+          </div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+    
+    // Check if this is a section header (bold text followed by colon or dash)
+    const sectionHeaderMatch = line.match(/^\*\*([^*]+)\*\*\s*[:\-]/);
+    if (sectionHeaderMatch) {
+      // Process as a section header with bold title
+      const parts: React.ReactNode[] = [];
+      let lastIndex = 0;
+      const boldRegex = /\*\*([^*]+)\*\*/g;
+      let match;
+      let key = 0;
+      
+      while ((match = boldRegex.exec(line)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(line.slice(lastIndex, match.index));
+        }
+        parts.push(<strong key={key++} className="text-neutral-900 font-semibold">{match[1]}</strong>);
+        lastIndex = match.index + match[0].length;
+      }
+      
+      if (lastIndex < line.length) {
+        parts.push(line.slice(lastIndex));
+      }
+      
+      processedLines.push(
+        <div key={i} className="mb-4 mt-6 first:mt-0">
+          <div className="text-base leading-relaxed text-neutral-800">
+            {parts.length > 0 ? parts : line}
           </div>
         </div>
       );
@@ -119,11 +233,11 @@ function renderMarkdown(text: string): React.ReactNode {
     // Check if next line is empty or a list item to determine spacing
     const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
     const isLastLine = i === lines.length - 1;
-    const nextIsList = nextLine && nextLine.match(/^[0-9]+\.\s+/);
+    const nextIsList = nextLine && (nextLine.match(/^[0-9]+\.\s+/) || nextLine.match(/^[•\-\*▪]\s+/));
     const nextIsEmpty = nextLine && nextLine.trim() === '';
     
-    // Add spacing: mb-3 for regular paragraphs, mb-4 before lists
-    const marginClass = isLastLine ? '' : (nextIsList ? 'mb-4' : 'mb-3');
+    // Add spacing: mb-4 for paragraphs before lists or empty lines, mb-3 for regular paragraphs
+    const marginClass = isLastLine ? '' : (nextIsList || nextIsEmpty ? 'mb-4' : 'mb-3');
     
     processedLines.push(
       <div key={i} className={marginClass}>
@@ -170,7 +284,7 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
         ) : (
           <>
             {(displayContent || isStreaming) && (
-              <div className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed text-neutral-900" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+              <div className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed text-neutral-900" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.7' }}>
                 {renderMarkdown(displayContent)}
                 {isStreaming && displayContent && (
                   <LoadingAnimation variant="cursor" color="#0066FF" />

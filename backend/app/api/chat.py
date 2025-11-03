@@ -53,6 +53,12 @@ async def chat(
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
 
+@router.options("/stream")
+async def chat_stream_options():
+    """Handle CORS preflight for streaming endpoint."""
+    return {}
+
+
 @router.post("/stream")
 async def chat_stream(
     request: ChatRequest,

@@ -2,7 +2,7 @@
 Document upload and management endpoints.
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from typing import List
 import os
@@ -98,6 +98,12 @@ async def upload_document(
     )
 
 
+@router.options("/")
+async def list_documents_options():
+    """Handle CORS preflight for list documents endpoint."""
+    return {}
+
+
 @router.get("/")
 async def list_documents(
     db: Session = Depends(get_db),
@@ -120,6 +126,39 @@ async def list_documents(
         }
         for doc in documents
     ]
+
+
+@router.get("/{document_id}/view")
+async def view_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get the file path to view a document.
+    
+    Args:
+        document_id: UUID of the document to view
+        db: Database session
+    """
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+    
+    doc = db.query(Document).filter(Document.id == doc_uuid).first()
+    
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Document file not found")
+    
+    # Return file for viewing
+    return FileResponse(
+        doc.file_path,
+        media_type="application/pdf" if doc.file_type == "pdf" else "application/octet-stream",
+        filename=doc.name,
+    )
 
 
 @router.delete("/{document_id}")

@@ -10,15 +10,19 @@ from app.core.config import settings
 from app.services.embedding_service import EmbeddingService
 
 app = FastAPI(
-    title="LLMOPS Product Backend",
-    description="Backend RAG pour l'assistant de conformité réglementaire",
+    title="HexaBank Compliance Assistant API",
+    description="Backend RAG pour l'assistant de conformité réglementaire HexaBank",
     version="0.1.0",
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Vite dev server
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",  # Vite fallback port
+        "http://localhost:5173",  # Vite default dev server
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,5 +49,5 @@ app.include_router(documents.router, prefix="/api/documents", tags=["documents"]
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "LLMOPS Product Backend API", "version": "0.1.0"}
+    return {"message": "HexaBank Compliance Assistant API", "version": "0.1.0"}
 

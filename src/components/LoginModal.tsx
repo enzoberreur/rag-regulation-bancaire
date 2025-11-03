@@ -44,6 +44,12 @@ export function LoginModal({ isOpen, onLogin }: LoginModalProps) {
         <div className="p-6">
           {/* Header */}
           <div className="mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-[#0066FF] flex items-center justify-center">
+                <span className="text-white font-bold text-sm">H</span>
+              </div>
+              <span className="text-lg font-semibold text-neutral-900">HexaBank</span>
+            </div>
             <h2 className="text-xl font-bold text-neutral-800">Login</h2>
           </div>
 

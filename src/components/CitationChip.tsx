@@ -6,6 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip';
+import { getDocumentViewUrl } from '../services/api';
 
 interface Citation {
   id: string;
@@ -21,7 +22,14 @@ interface CitationChipProps {
 export function CitationChip({ citation }: CitationChipProps) {
   const handleClick = () => {
     if (citation.url) {
-      console.log(`Navigate to: ${citation.url}`);
+      // Extract document ID from URL (format: /documents/{id})
+      const match = citation.url.match(/\/documents\/([^/]+)/);
+      if (match) {
+        const documentId = match[1];
+        // Open document in new tab using the backend view endpoint
+        const viewUrl = getDocumentViewUrl(documentId);
+        window.open(viewUrl, '_blank');
+      }
     }
   };
 
