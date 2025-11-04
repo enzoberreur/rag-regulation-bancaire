@@ -5,6 +5,7 @@ import { LoadingAnimation } from './LoadingAnimation';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './ui/button';
+import { HighlightedAnswer } from './HighlightedAnswer';
 
 interface Citation {
   id: string;
@@ -26,184 +27,168 @@ interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
-// Find text segments that match source citations for highlighting
-function findSourceMatches(text: string, citations?: Citation[]): Array<{start: number, end: number, citation: Citation}> {
-  if (!citations || citations.length === 0) return [];
-  
-  const matches: Array<{start: number, end: number, citation: Citation}> = [];
-  
-  // For each citation, try to find matching segments in the text
-  citations.forEach(citation => {
-    // Extract meaningful phrases from citation text (sentences with >20 chars)
-    const sentences = citation.text.split(/[.!?]+/).filter(s => s.trim().length > 20);
-    
-    sentences.forEach(sentence => {
-      const cleanSentence = sentence.trim().toLowerCase();
-      const cleanText = text.toLowerCase();
-      
-      // Look for this sentence in the response text
-      let index = cleanText.indexOf(cleanSentence);
-      if (index !== -1) {
-        matches.push({
-          start: index,
-          end: index + cleanSentence.length,
-          citation: citation
-        });
-      } else {
-        // Try finding partial matches (at least 30 chars)
-        const words = cleanSentence.split(/\s+/);
-        if (words.length >= 5) {
-          // Try matching chunks of 5+ words
-          for (let i = 0; i <= words.length - 5; i++) {
-            const chunk = words.slice(i, i + 5).join(' ');
-            if (chunk.length >= 30) {
-              index = cleanText.indexOf(chunk);
-              if (index !== -1) {
-                matches.push({
-                  start: index,
-                  end: index + chunk.length,
-                  citation: citation
-                });
-                break;
-              }
-            }
-          }
-        }
-      }
-    });
-  });
-  
-  // Sort by position and remove overlaps (keep first match)
-  matches.sort((a, b) => a.start - b.start);
-  const filtered: typeof matches = [];
-  matches.forEach(match => {
-    if (filtered.length === 0 || match.start >= filtered[filtered.length - 1].end) {
-      filtered.push(match);
-    }
-  });
-  
-  return filtered;
+// Component to display text with a tooltip showing source information
+interface SourceHighlightProps {
+  children: React.ReactNode;
+  citation: Citation;
+  sourceNumber: number;
 }
 
-// Render text with automatic source highlighting
+function SourceHighlight({ children, citation, sourceNumber }: SourceHighlightProps) {
+  const colors = [
+    'bg-blue-100 hover:bg-blue-200 border-blue-400',
+    'bg-green-100 hover:bg-green-200 border-green-400',
+    'bg-yellow-100 hover:bg-yellow-200 border-yellow-400',
+    'bg-purple-100 hover:bg-purple-200 border-purple-400',
+    'bg-pink-100 hover:bg-pink-200 border-pink-400',
+  ];
+  
+  const colorClass = colors[(sourceNumber - 1) % colors.length];
+  
+  return (
+    <span className={`${colorClass} border-b-2 cursor-help transition-colors relative group px-0.5 rounded-sm`}>
+      {children}
+      {/* Tooltip */}
+      <span className="invisible group-hover:visible absolute bottom-full left-0 mb-2 w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-2xl z-50 pointer-events-none">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white font-semibold text-xs">
+            {sourceNumber}
+          </span>
+          <div className="font-semibold text-sm">{citation.source}</div>
+        </div>
+        <div className="text-gray-300 max-h-32 overflow-y-auto leading-relaxed">
+          {citation.text.substring(0, 300)}
+          {citation.text.length > 300 ? '...' : ''}
+        </div>
+        {/* Arrow */}
+        <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-gray-900"></div>
+      </span>
+    </span>
+  );
+}
+
+// Parse text to find [SOURCE:N] markers and split text into segments
+interface TextSegment {
+  text: string;
+  sourceNumber?: number;
+}
+
+function parseTextWithSources(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  
+  // Split by sentence endings followed by [SOURCE:N]
+  // Pattern: capture text ending with . or ! or ? followed by [SOURCE:N]
+  const pattern = /([^.!?]+[.!?])\s*\[SOURCE:(\d+)\]/g;
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = pattern.exec(text)) !== null) {
+    // Add any text before this sentence (without source)
+    if (match.index > lastIndex) {
+      const textBefore = text.substring(lastIndex, match.index).trim();
+      if (textBefore) {
+        segments.push({ text: textBefore });
+      }
+    }
+    
+    // Add the sentence with its source number
+    segments.push({
+      text: match[1].trim(),
+      sourceNumber: parseInt(match[2], 10)
+    });
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text (without source)
+  if (lastIndex < text.length) {
+    const remaining = text.substring(lastIndex).trim();
+    if (remaining) {
+      segments.push({ text: remaining });
+    }
+  }
+  
+  return segments;
+}
+
+// Render text with source highlighting based on [SOURCE:N] markers
 function renderMarkdownWithHighlights(text: string, citations?: Citation[]): React.ReactNode {
+  if (!citations || citations.length === 0) {
+    return renderMarkdown(text);
+  }
+  
+  // Check if text contains [SOURCE:N] markers
+  const hasSourceMarkers = /\[SOURCE:\d+\]/g.test(text);
+  
+  if (!hasSourceMarkers) {
+    // Fallback to simple rendering if no markers found
+    return renderMarkdown(text);
+  }
+  
+  const segments = parseTextWithSources(text);
+  
+  // Build a citation map by source number (1-indexed)
+  const citationMap = new Map<number, Citation>();
+  citations.forEach((citation, index) => {
+    citationMap.set(index + 1, citation);
+  });
+  
   const elements: React.ReactNode[] = [];
   let key = 0;
   
-  // Find source matches in the text
-  const sourceMatches = findSourceMatches(text, citations);
-  
-  // Build a map of character positions to citations
-  const positionToCitation = new Map<number, Citation>();
-  sourceMatches.forEach(match => {
-    for (let i = match.start; i < match.end; i++) {
-      positionToCitation.set(i, match.citation);
+  segments.forEach((segment, segmentIndex) => {
+    const citation = segment.sourceNumber ? citationMap.get(segment.sourceNumber) : null;
+    
+    // Process text for markdown (bold, line breaks)
+    const processedText = processMarkdownText(segment.text, key);
+    
+    if (citation && segment.sourceNumber) {
+      elements.push(
+        <SourceHighlight key={`source-${key++}`} citation={citation} sourceNumber={segment.sourceNumber}>
+          {processedText}
+        </SourceHighlight>
+      );
+    } else {
+      elements.push(<span key={`text-${key++}`}>{processedText}</span>);
     }
   });
   
-  // Process text character by character, grouping into segments
-  let currentSegment = '';
-  let currentCitation: Citation | null = null;
-  let textIndex = 0;
+  return <>{elements}</>;
+}
+
+// Process markdown formatting (bold, line breaks) for a text segment
+function processMarkdownText(text: string, baseKey: number): React.ReactNode {
+  const elements: React.ReactNode[] = [];
+  let key = baseKey;
   
-  const flushSegment = () => {
-    if (currentSegment) {
-      const segment = currentSegment;
-      const citation = currentCitation;
-      
-      if (citation) {
-        // Highlighted segment with tooltip
-        elements.push(
-          <span
-            key={`seg-${key++}`}
-            className="bg-blue-50 hover:bg-blue-100 border-b-2 border-blue-300 cursor-help transition-colors relative group px-0.5"
-            title={citation.source}
-          >
-            {segment}
-            {/* Tooltip */}
-            <span className="invisible group-hover:visible absolute bottom-full left-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none">
-              <div className="font-semibold mb-1 text-sm">{citation.source}</div>
-              <div className="text-gray-300 max-h-24 overflow-y-auto">{citation.text.substring(0, 200)}...</div>
-              <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-gray-900"></div>
-            </span>
-          </span>
-        );
-      } else {
-        // Regular text
-        elements.push(<span key={`seg-${key++}`}>{segment}</span>);
-      }
-      
-      currentSegment = '';
-      currentCitation = null;
-    }
-  };
-  
-  // Process each character
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const citation = positionToCitation.get(i);
-    
-    // If citation changes, flush current segment
-    if (citation !== currentCitation) {
-      flushSegment();
-      currentCitation = citation || null;
+  const lines = text.split('\n');
+  lines.forEach((line, lineIndex) => {
+    if (lineIndex > 0) {
+      elements.push(<br key={`br-${key++}`} />);
     }
     
-    currentSegment += char;
-  }
-  
-  // Flush remaining segment
-  flushSegment();
-  
-  // Now process for line breaks and bold
-  const finalElements: React.ReactNode[] = [];
-  let segmentKey = 0;
-  
-  elements.forEach(element => {
-    if (typeof element === 'object' && element && 'props' in element) {
-      const content = element.props.children;
-      if (typeof content === 'string') {
-        // Split by newlines and bold
-        const lines = content.split('\n');
-        lines.forEach((line, lineIdx) => {
-          if (lineIdx > 0) {
-            finalElements.push(<br key={`br-${segmentKey++}`} />);
-          }
-          
-          // Process bold in this line
-          const boldRegex = /\*\*([^*]+)\*\*/g;
-          let lastIdx = 0;
-          let match;
-          const lineParts: React.ReactNode[] = [];
-          
-          while ((match = boldRegex.exec(line)) !== null) {
-            if (match.index > lastIdx) {
-              lineParts.push(line.slice(lastIdx, match.index));
-            }
-            lineParts.push(<strong key={`bold-${segmentKey++}`} className="font-semibold">{match[1]}</strong>);
-            lastIdx = match.index + match[0].length;
-          }
-          
-          if (lastIdx < line.length) {
-            lineParts.push(line.slice(lastIdx));
-          }
-          
-          if (lineParts.length > 0) {
-            // Wrap in the same span type as original (highlighted or not)
-            const newElement = React.cloneElement(element as React.ReactElement, {
-              key: `wrap-${segmentKey++}`,
-              children: lineParts
-            });
-            finalElements.push(newElement);
-          }
-        });
-      } else {
-        finalElements.push(element);
+    // Process bold in this line
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    let lastIdx = 0;
+    let match;
+    const lineParts: React.ReactNode[] = [];
+    
+    while ((match = boldRegex.exec(line)) !== null) {
+      if (match.index > lastIdx) {
+        lineParts.push(line.slice(lastIdx, match.index));
       }
+      lineParts.push(<strong key={`bold-${key++}`} className="font-semibold">{match[1]}</strong>);
+      lastIdx = match.index + match[0].length;
     }
+    
+    if (lastIdx < line.length) {
+      lineParts.push(line.slice(lastIdx));
+    }
+    
+    elements.push(...lineParts);
   });
   
-  return <>{finalElements}</>;
+  return <>{elements}</>;
 }
 
 // Keep simple version for backward compatibility
@@ -458,8 +443,21 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
         ) : (
           <>
             {(displayContent || isStreaming) && (
-              <div className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere leading-relaxed text-neutral-900" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.7' }}>
-                {renderMarkdown(displayContent, message.citations)}
+              <div className="text-sm leading-relaxed text-neutral-900">
+                {/* Check if content looks like HTML (contains <p> or <mark>) */}
+                {displayContent && (displayContent.includes('<p>') || displayContent.includes('<mark>')) ? (
+                  <HighlightedAnswer html={
+                    // Clean up potential markdown code blocks
+                    displayContent
+                      .replace(/```html\n?/g, '')
+                      .replace(/```\n?/g, '')
+                      .trim()
+                  } />
+                ) : (
+                  <div className="whitespace-pre-wrap break-words overflow-wrap-anywhere" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.7' }}>
+                    {renderMarkdown(displayContent, message.citations)}
+                  </div>
+                )}
                 {isStreaming && displayContent && (
                   <LoadingAnimation variant="cursor" color="#0066FF" />
                 )}

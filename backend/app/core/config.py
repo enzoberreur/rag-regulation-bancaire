@@ -3,6 +3,8 @@ Application configuration using Pydantic Settings.
 """
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -35,11 +37,12 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     
     # RAG
-    top_k_results: int = 5
+    top_k_results: int = 8  # Increased from 5 to get more diverse sources
     similarity_threshold: float = 0.5  # Reduced from 0.7 to be more permissive
     
     class Config:
-        env_file = ".env"
+        # Look for .env in the backend directory
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
         case_sensitive = False
 
 

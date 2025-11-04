@@ -41,12 +41,25 @@ cleanup() {
 # Trap Ctrl+C and call cleanup
 trap cleanup SIGINT SIGTERM
 
+# Check if poetry is installed
+if ! command -v poetry &> /dev/null; then
+    echo -e "${YELLOW}❌ Poetry not found. Please install it first:${NC}"
+    echo -e "   curl -sSL https://install.python-poetry.org | python3 -"
+    exit 1
+fi
+
+# Check if npm is installed
+if ! command -v npm &> /dev/null; then
+    echo -e "${YELLOW}❌ npm not found. Please install Node.js first:${NC}"
+    echo -e "   brew install node  # on macOS"
+    echo -e "   Or download from: https://nodejs.org/"
+    exit 1
+fi
+
 # Start backend
 echo -e "${BLUE}📦 Starting backend...${NC}"
-cd backend
-uv run python run.py > ../backend.log 2>&1 &
+PYTHONPATH="${SCRIPT_DIR}/backend:$PYTHONPATH" poetry run python backend/run.py > backend.log 2>&1 &
 BACKEND_PID=$!
-cd ..
 
 # Wait a bit for backend to start
 sleep 2

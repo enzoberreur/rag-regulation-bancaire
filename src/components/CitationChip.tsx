@@ -51,7 +51,7 @@ export function CitationChip({ citation }: CitationChipProps) {
                 ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:shadow-lg hover:shadow-amber-200/50' 
                 : isRegulation 
                 ? 'border-[#0066FF]/30 bg-[#E6F0FF] text-[#0066FF] hover:bg-[#0066FF] hover:text-white hover:shadow-electric'
-                : 'border-green-300 bg-green-50 text-green-900 hover:bg-green-100 hover:shadow-lg hover:shadow-green-200/50'
+                : 'border-[#60A5FA]/30 bg-[#EFF6FF] text-[#1E40AF] hover:bg-[#DBEAFE] hover:shadow-lg hover:shadow-[#93C5FD]/50'
             }`}
             onClick={handleClick}
           >

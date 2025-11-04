@@ -12,5 +12,11 @@ if __name__ == "__main__":
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.app_env == "development",
+        reload_excludes=[
+            "*.venv/*",
+            "*/.venv/*",
+            "*/site-packages/*",
+            "*/__pycache__/*",
+        ],
     )
 

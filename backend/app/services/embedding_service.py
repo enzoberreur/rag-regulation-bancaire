@@ -41,6 +41,7 @@ class EmbeddingService:
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for a list of texts.
+        Optimized with batch processing and GPU support.
         
         Args:
             texts: List of texts to embed
@@ -52,10 +53,13 @@ class EmbeddingService:
             return []
         
         # Generate embeddings (bge-m3 produces 1024-dimensional vectors)
+        # batch_size=32 is optimal for most hardware
         embeddings = self.model.encode(
             texts,
             normalize_embeddings=True,  # Normalize for cosine similarity
             show_progress_bar=False,
+            batch_size=32,  # Process 32 texts at a time
+            convert_to_numpy=True,  # Faster conversion
         )
         
         # Convert numpy array to list of lists
