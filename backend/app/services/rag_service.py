@@ -19,84 +19,147 @@ from app.services.reranker_service import RerankerService
 
 
 # System prompt for the LLM - used in both streaming and non-streaming modes
-SYSTEM_PROMPT = """Tu es un assistant réglementaire spécialisé en conformité bancaire (France/UE).
+SYSTEM_PROMPT = """You are an expert regulatory assistant specialized in banking compliance (France/EU).
 
-Tu dois répondre uniquement à partir du CONTEXTE fourni, composé d'extraits de plusieurs documents (ACPR, CRD4, Bâle III, KYC, LCB-FT, etc.).
+You have access to a CONTEXT of document excerpts (ACPR, CRD4, Basel III, KYC, AML-CFT, etc.) AND your general knowledge of banking regulations.
 
-Date : {today}
+Date: {today}
 
-## Objectif :
-Produire une analyse complète et structurée répondant à la question utilisateur, en **croisant les informations issues de plusieurs sources distinctes**.
+⚠️ CRITICAL ANTI-HALLUCINATION RULE:
+**NEVER put <mark> tags around text that is NOT in the CONTEXT documents.**
+If you use <mark data-source="...">, the text inside MUST be a VERBATIM quote from the CONTEXT.
+If you're not 100% sure the text is in the CONTEXT → DO NOT use <mark> tags.
+Better to have NO citations than FALSE citations.
 
-## Contraintes de fond (OBLIGATOIRES) :
-- Tu DOIS obligatoirement citer **au moins deux documents différents** si la question le requiert
-- Si un document n'aborde qu'un aspect du sujet, complète avec d'autres documents du CONTEXTE pour les angles manquants
-- Ne jamais inventer de texte ou de référence : cite uniquement ce qui est explicitement mentionné
-- Chaque donnée réglementaire, obligation, seuil, ou principe doit avoir **une citation précise**
-- Si tu fais un lien ou une synthèse entre plusieurs documents, indique-le clairement : « En croisant CRD4 (gouvernance) et LCB-FT (vigilance) → … »
+## ⚠️ CRITICAL: Language Detection (HIGHEST PRIORITY)
+**YOU ABSOLUTELY MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION**
+This is your PRIMARY constraint - more important than anything else.
 
-## Format de sortie HTML (SANS code blocks) :
-Ta réponse doit être du HTML pur. Pour chaque phrase issue du CONTEXTE, entoure-la avec :
-`<mark data-source="NomDoc, p.X">texte exact du document</mark>`
+LANGUAGE RULES:
+- French question (contains "Quels", "Comment", "Pourquoi", etc.) → ENTIRE answer in French
+- English question (contains "What", "How", "Why", etc.) → ENTIRE answer in English  
+- Spanish question → ENTIRE answer in Spanish
+- etc.
 
-Ne surligne PAS tes reformulations, transitions ou analyses - uniquement les extraits directs.
+ALL section titles, headings, explanations, transitions, and text MUST be in the detected language.
+Only the cited excerpts from documents can remain in their original language.
 
-## Structure imposée :
+## Objective:
+Produce a complete, accurate, and insightful analysis by **combining**:
+1. **CONTEXT documents** (priority) - for specific facts, requirements, and official data
+2. **Your expert knowledge** - for context, explanations, industry practices, and complementary information
 
-<h3>Résumé exécutif</h3>
-<p>(5-8 lignes maximum synthétisant la réponse avec citations multi-sources)</p>
+## Hybrid RAG Strategy (INTELLIGENT & FLEXIBLE):
 
-<h3>Analyse détaillée</h3>
-<h4>1. [Premier axe thématique]</h4>
-<p>(Développement avec citations croisées de plusieurs documents)</p>
+**🎯 Your Goal:** Provide the BEST possible answer by intelligently combining documents and expert knowledge.
 
-<h4>2. [Deuxième axe thématique]</h4>
-<p>(Développement avec citations croisées)</p>
+**Priority 1 - Document CONTEXT (when relevant):**
+- If CONTEXT directly answers the question → cite it with <mark data-source="DocName, p.X">exact excerpt</mark>
+- Use MULTIPLE documents ONLY if they add different perspectives or complementary information
+- Don't force multi-document citations if one document fully answers the question
+- Quality over quantity: 1 highly relevant document > 3 tangentially related ones
 
-<h4>3. Mécanismes de gouvernance / Obligations</h4>
-<p>(Si pertinent pour la question)</p>
+**Priority 2 - Expert Knowledge (always useful):**
+- Add context, definitions, WHY regulations exist, HOW they work in practice
+- Historical context (e.g., "Basel III post-2008 crisis...")
+- Industry best practices, real-world implementation
+- Cross-jurisdictional comparisons when relevant
+- **BUT**: NEVER attribute your knowledge to documents - clearly distinguish cited vs expert info
 
-<h4>4. Lien avec supervision ACPR</h4>
-<p>(Si pertinent pour la question)</p>
+**Intelligent Document Selection:**
+- Question needs ONE document → cite one document
+- Question spans multiple topics → cite multiple documents naturally
+- Question needs context → prioritize expert knowledge over forcing citations
+- Documents incomplete → say so and complete with expert knowledge
 
-<h3>Sources croisées</h3>
+**Example - Single document sufficient:**
+"<mark data-source="CRD4, p.12">Le ratio CET1 minimum est fixé à 4,5%</mark>. Ce seuil constitue le noyau dur des fonds propres et a été renforcé après 2008 pour améliorer la résilience bancaire face aux chocs."
+
+**Example - Multiple documents beneficial:**
+"<mark data-source="CRD4, p.12">Le ratio CET1 est de 4,5%</mark> selon la directive européenne. <mark data-source="ACPR Guide, p.34">En France, l'ACPR peut imposer des exigences supplémentaires aux établissements systémiques</mark>. En pratique, les grandes banques maintiennent 13-15% pour préserver leur notation."
+
+## Content Philosophy:
+- **Flexibility > Rigidity**: Adapt structure to question complexity
+- **Relevance > Rules**: Cite what's useful, not what's required
+- **Completeness > Brevity**: Better to be thorough than artificially constrained
+- **Clarity > Formality**: Distinguish cited facts (with <mark>) from expert insights (without <mark>)
+
+## HTML Output Format (WITHOUT code blocks):
+Your answer must be pure HTML. For direct quotes from CONTEXT documents, use:
+`<mark data-source="DocName, p.X">exact text from document</mark>`
+
+For your expert knowledge, write normally WITHOUT <mark> tags.
+
+## Flexible Structure (adapt to question complexity):
+
+**For simple/focused questions (1 topic):**
+<h3>Answer / Réponse</h3>
+<p>(Direct answer with citations + expert context)</p>
+
+<h3>Additional Context / Contexte additionnel</h3>
+<p>(Expert insights, historical context, best practices)</p>
+
+**For complex/multi-faceted questions (multiple topics):**
+<h3>Executive Summary / Résumé exécutif</h3>
+<p>(Brief overview)</p>
+
+<h3>Detailed Analysis / Analyse détaillée</h3>
+<h4>[Topic 1 - choose relevant title]</h4>
+<p>(Citations + expert analysis)</p>
+
+<h4>[Topic 2 - choose relevant title]</h4>
+<p>(Citations + expert analysis)</p>
+
+<h4>[Topic 3 - if needed]</h4>
+<p>(Citations + expert analysis)</p>
+
+<h3>Practical Implications / Implications pratiques</h3>
+<p>(Expert insights on real-world application)</p>
+
+**Always conclude with:**
+<h3>Sources</h3>
 <ul>
-<li>Document 1 – titre, p.X</li>
-<li>Document 2 – titre, p.Y</li>
-<li>Document 3 – titre, p.Z</li>
+<li>[List only documents you actually cited with <mark> tags]</li>
 </ul>
 
-<h3>À vérifier</h3>
-<p>(Éléments manquants dans le CONTEXTE)</p>
+**Key principles:**
+- Adapt structure to question: simple question = simple answer, complex question = detailed analysis
+- Don't force sections if not needed
+- Don't force multiple documents if one is sufficient
+- Prioritize clarity and completeness over rigid structure
 
-## Exemple concret :
+## Concrete Example - HYBRID RAG (French question):
+
+**Question:** "Quels sont les ratios de capital requis par Bâle III ?"
 
 <h3>Résumé exécutif</h3>
-<p>La mise en œuvre du dispositif LCB-FT et du KYC contribue directement au respect des exigences prudentielles de la CRD4/CRR en garantissant une évaluation correcte des risques de contrepartie. Elle soutient la supervision exercée par l'ACPR via la qualité du reporting et la traçabilité des contrôles internes.</p>
+<p><mark data-source="CRD4, p.23">Le ratio CET1 minimum est fixé à 4,5% des actifs pondérés par les risques</mark>, complété par un coussin de conservation de 2,5% (Bâle III post-2008). En pratique, la plupart des grandes banques européennes maintiennent un CET1 entre 13% et 15% pour préserver leur notation de crédit et accéder aux marchés de capitaux. <mark data-source="ACPR Guide, p.12">L'ACPR supervise mensuellement ces ratios et peut imposer des exigences supplémentaires aux établissements systémiques</mark>.</p>
 
 <h3>Analyse détaillée</h3>
-<h4>1. Évaluation des risques et conformité prudentielle</h4>
-<p><mark data-source="LCB FT, p.2">Les dispositifs LCB-FT imposent aux établissements une cartographie des risques de blanchiment.</mark> <mark data-source="KYC, p.4">L'identification client (KYC) permet une évaluation fine du profil de risque.</mark> En les intégrant dans <mark data-source="CRD4, p.5">la directive CRD4 (gouvernance, contrôle interne, fonction conformité)</mark>, les établissements renforcent leur dispositif prudentiel.</p>
+<h4>1. Ratios de fonds propres réglementaires</h4>
+<p>Le cadre Bâle III distingue trois niveaux de fonds propres. <mark data-source="CRD4, p.23">Le Common Equity Tier 1 (CET1) constitue le noyau dur avec un minimum de 4,5%</mark>. Le Tier 1 global inclut aussi les instruments hybrides et doit atteindre 6%. Le ratio total de solvabilité (incluant Tier 2) est fixé à 8%. Ces seuils ont été renforcés après la crise de 2008 pour garantir que les banques puissent absorber des pertes importantes sans menacer la stabilité financière.</p>
 
-<h4>2. Gouvernance et supervision ACPR</h4>
-<p><mark data-source="ACPR, p.3">L'ACPR exige que les dispositifs de contrôle interne couvrent la conformité LCB-FT et KYC dans le rapport annuel.</mark> Ce suivi permet à l'autorité de vérifier la cohérence entre exigences prudentielles et obligations de vigilance.</p>
+<h4>2. Coussins de capital supplémentaires</h4>
+<p><mark data-source="CRD4, p.45">Le coussin de conservation obligatoire est de 2,5% en CET1</mark>, portant l'exigence minimale effective à 7%. Les banques systémiques doivent aussi constituer un coussin G-SIB pouvant aller jusqu'à 2,5% supplémentaires. En France, l'ACPR peut activer un coussin contra-cyclique jusqu'à 2,5% en période de croissance excessive du crédit.</p>
 
-<h3>Sources croisées</h3>
-<ul>
-<li>LCB-FT – Fiche impact, p.2-3</li>
-<li>KYC – Guide, p.4</li>
-<li>CRD4 – Notice ACPR, p.5</li>
-<li>ACPR – Rapport contrôle, p.3</li>
-</ul>
+## Concrete Example - HYBRID RAG (English question):
 
-## Règles strictes :
-1. NE JAMAIS écrire ```html
-2. Utiliser AU MOINS 2 documents différents
-3. Réponse longue et structurée (400-600 mots)
-4. Surligner uniquement les extraits directs avec <mark data-source="...">
-5. Indiquer explicitement les croisements entre documents
-6. Si info manquante, le dire dans "À vérifier"
-7. Dates absolues (pas "aujourd'hui")"""
+**Question:** "What are the Basel III capital requirements?"
+
+<h3>Executive Summary</h3>
+<p><mark data-source="CRD4, p.23">The minimum CET1 ratio is set at 4.5% of risk-weighted assets</mark>, complemented by a 2.5% conservation buffer (Basel III post-2008). In practice, most major European banks maintain CET1 ratios between 13% and 15% to preserve their credit ratings and access capital markets. <mark data-source="ACPR Guide, p.12">ACPR supervises these ratios monthly and may impose additional requirements on systemic institutions</mark>.</p>
+
+## Essential Rules:
+1. NEVER write ```html - output pure HTML directly
+2. **LANGUAGE MATCHING IS ABSOLUTE** - French question → French answer, English question → English answer
+3. Use <mark data-source="...">citation</mark> ONLY for direct document quotes
+4. Cite documents when they're relevant - 1 document is fine if sufficient, multiple if beneficial
+5. ADD expert knowledge generously - context, explanations, best practices, historical background
+6. Clearly distinguish: cited facts (with <mark>) vs expert knowledge (without <mark>)
+7. Answer length: adapt to question complexity (200-800 words) - completeness matters more than word count
+8. Structure: adapt to question - simple question = simple structure, complex question = detailed sections
+9. If CONTEXT incomplete: acknowledge it and complete with expert knowledge
+10. Use absolute dates (not "today" or "currently")"""
 
 
 class ChatMessage(BaseModel):
@@ -180,6 +243,38 @@ class RAGService:
         except KeyError:
             # Fallback to cl100k_base if model not found
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
+    
+    def _detect_language(self, text: str) -> str:
+        """
+        Detect the language of the input text using simple heuristics.
+        Returns language name in English.
+        """
+        text_lower = text.lower()
+        
+        # French indicators
+        french_words = ['quels', 'quel', 'quelle', 'comment', 'pourquoi', 'où', 'sont', 'est-ce', 
+                       'les', 'des', 'une', 'dans', 'pour', 'avec', 'sur', 'que', 'qui']
+        french_count = sum(1 for word in french_words if word in text_lower)
+        
+        # English indicators  
+        english_words = ['what', 'how', 'why', 'where', 'when', 'which', 'who', 'the', 'are', 
+                        'is', 'can', 'does', 'do', 'should', 'would', 'could']
+        english_count = sum(1 for word in english_words if word in text_lower)
+        
+        # Spanish indicators
+        spanish_words = ['qué', 'cómo', 'cuál', 'cuáles', 'dónde', 'por qué', 'para', 'con', 'los', 'las']
+        spanish_count = sum(1 for word in spanish_words if word in text_lower)
+        
+        # Determine language
+        if french_count > english_count and french_count > spanish_count:
+            return "French"
+        elif english_count > french_count and english_count > spanish_count:
+            return "English"
+        elif spanish_count > 0:
+            return "Spanish"
+        else:
+            # Default to English if unclear
+            return "English"
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text."""
@@ -384,147 +479,50 @@ Reformulation optimisée :"""
         
         return citations
     
-    async def generate_response(
-        self,
-        query: str,
-        chat_history: Optional[List[ChatMessage]] = None,
-    ) -> dict:
+    async def _is_relevant_query(self, query: str) -> tuple[bool, str]:
         """
-        Generate a response using RAG.
-        
-        Args:
-            query: User query
-            chat_history: Optional chat history
-        
-        Returns:
-            Response dict with content and citations
+        Check if the query is relevant to banking/compliance documents.
+        Returns (is_relevant, language).
         """
-        # 🔥 1. Reformuler la query pour améliorer la recherche
-        reformulated_query = await self._reformulate_query(query)
-        
-        # Generate query embedding (sur la query reformulée)
-        query_embedding = await self.embedding_service.generate_embedding(reformulated_query)
-        
-        # 🔥 2. Recherche vectorielle large (2x plus de résultats)
-        initial_top_k = settings.top_k_results * 2  # 16 chunks au lieu de 8
-        chunks, similarity_scores = await self._search_relevant_chunks(query_embedding, top_k=initial_top_k)
-        
-        # 🔥 3. Reranking pour garder les meilleurs
-        if chunks:
-            chunks, similarity_scores = self.reranker_service.rerank(
-                query=query,  # On utilise la query ORIGINALE pour le reranking
-                chunks=chunks,
-                similarity_scores=similarity_scores,
-                top_k=settings.top_k_results  # Garder seulement les 8 meilleurs
+        relevance_prompt = f"""You are a query classifier for a banking compliance assistant.
+
+Question: "{query}"
+
+Is this question relevant to:
+- Banking regulations (Basel, CRD4, ACPR, ECB, MiFID, GDPR, AI Act, DORA)
+- Compliance (KYC, AML-CFT, LCB-FT, data protection)
+- Financial risk management
+- Internal controls
+- Banking supervision
+- Technology/AI regulations affecting banking
+
+Answer ONLY with: "YES" or "NO"
+
+If NO, the question is about: weather, sports, cooking, entertainment, personal questions, etc.
+
+Answer:"""
+
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": relevance_prompt}],
+                temperature=0.0,
+                max_tokens=10
             )
-        
-        # Calculate average similarity score
-        avg_similarity = sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0.0
-        
-        # Check if we found any relevant chunks
-        if not chunks:
-            # No relevant documents found - return informative message
-            return {
-                "content": "Je n'ai pas trouvé d'information pertinente dans les documents téléchargés pour répondre à votre question. Veuillez vous assurer d'avoir téléchargé des documents pertinents, ou reformulez votre question.",
-                "citations": [],
-                "metrics": {
-                    "tokens_used": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost": 0.0,
-                    "citations_count": 0,
-                    "average_similarity_score": 0.0,
-                }
-            }
-        
-        # Build context
-        context = await self._build_context(chunks)
-        
-        # Build citations
-        citations = self._build_citations(chunks)
-        
-        # Get current date in Paris timezone
-        paris_tz = pytz.timezone('Europe/Paris')
-        today = datetime.now(paris_tz).strftime("%d/%m/%Y")
-        
-        # Build prompt using global system prompt
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT.format(today=today)},
-        ]
-        
-        # Add chat history if provided
-        if chat_history:
-            for msg in chat_history[-10:]:  # Limit to last 10 messages
-                messages.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                })
-        
-        # Add context and query
-        user_content = f"""CONTEXTE (extraits de documents réglementaires et internes) :
-
-{context}
-
-QUESTION :
-{query}
-
-INSTRUCTIONS CRITIQUES :
-1. Ta réponse DOIT utiliser **PLUSIEURS documents du CONTEXTE** et expliquer comment ils interagissent
-2. Cite obligatoirement AU MOINS 2 documents différents (idéalement 3-4)
-3. Croise explicitement les informations : « En combinant [Doc1] et [Doc2] → ... »
-4. Réponse de 400-600 mots avec structure HTML imposée (Résumé exécutif / Analyse détaillée / Sources croisées / À vérifier)
-5. Surligne UNIQUEMENT les extraits directs avec <mark data-source="Nom_Doc, p.X">texte exact</mark>
-6. Pour chaque thème, cherche des infos complémentaires dans différents documents du CONTEXTE"""
-        
-        messages.append({"role": "user", "content": user_content})
-        
-        # Count input tokens before sending to LLM
-        input_tokens = sum(self._count_tokens(msg["content"]) for msg in messages)
-        
-        # Generate response using OpenAI
-        response = await self.openai_client.chat.completions.create(
-            model=settings.llm_model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=2000,
-        )
-        
-        content = response.choices[0].message.content
-        print(f"🔍 RAG Response content (first 500 chars): {content[:500] if content else 'None'}")
-
-        # Normalize formatting to ensure proper spacing (LLM sometimes ignores instructions)
-        # Use the global formatting function
-        content = _normalize_formatting(content)
-        
-        # Extract usage metrics from response (preferred)
-        usage = response.usage
-        if usage:
-            # Use actual usage from OpenAI if available
-            input_tokens = usage.prompt_tokens
-            output_tokens = usage.completion_tokens
-            total_tokens = usage.total_tokens
-        else:
-            # Fallback: count tokens manually
-            output_tokens = self._count_tokens(content) if content else 0
-            total_tokens = input_tokens + output_tokens
-        
-        # Calculate cost based on model pricing from settings
-        input_cost = (input_tokens / 1_000_000) * settings.llm_input_price_per_1m
-        output_cost = (output_tokens / 1_000_000) * settings.llm_output_price_per_1m
-        total_cost = input_cost + output_cost
-        
-        return {
-            "content": content,
-            "citations": [c.dict() for c in citations],
-            "metrics": {
-                "tokens_used": total_tokens,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cost": total_cost,
-                "citations_count": len(citations),
-                "average_similarity_score": round(avg_similarity, 3),
-            }
-        }
+            
+            answer = response.choices[0].message.content.strip().upper()
+            is_relevant = "YES" in answer
+            
+            # Detect language
+            detected_lang = self._detect_language(query)
+            
+            print(f"🎯 Query relevance: {answer} | Language: {detected_lang}")
+            return is_relevant, detected_lang
+            
+        except Exception as e:
+            print(f"⚠️ Erreur vérification pertinence: {e}")
+            # En cas d'erreur, on suppose que c'est pertinent
+            return True, self._detect_language(query)
     
     async def generate_response_stream(
         self,
@@ -541,6 +539,33 @@ INSTRUCTIONS CRITIQUES :
         Yields:
             SSE-formatted chunks
         """
+        # 🎯 0. Vérifier la pertinence de la question
+        is_relevant, detected_lang = await self._is_relevant_query(query)
+        
+        if not is_relevant:
+            # Question hors sujet - réponse immédiate
+            if detected_lang == "French":
+                out_of_scope_msg = "Je suis un assistant spécialisé en conformité bancaire. Je peux uniquement répondre à des questions sur la réglementation bancaire (Bâle III, CRD4, ACPR), la conformité (KYC, LCB-FT), les risques financiers et le contrôle interne. Votre question ne concerne pas ces domaines."
+            else:
+                out_of_scope_msg = "I am a banking compliance assistant. I can only answer questions about banking regulations (Basel III, CRD4, ACPR), compliance (KYC, AML-CFT), financial risks, and internal controls. Your question is outside these topics."
+            
+            yield f"data: {out_of_scope_msg}\n\n"
+            yield f"data: {json.dumps({'type': 'citations', 'data': []})}\n\n"
+            metrics_data = {
+                "type": "metrics",
+                "data": {
+                    "tokens_used": 50,
+                    "input_tokens": 30,
+                    "output_tokens": 20,
+                    "cost": 0.00001,
+                    "citations_count": 0,
+                    "average_similarity_score": 0.0,
+                }
+            }
+            yield f"data: {json.dumps(metrics_data)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        
         # 🔥 1. Reformuler la query pour améliorer la recherche
         reformulated_query = await self._reformulate_query(query)
         
@@ -607,21 +632,84 @@ INSTRUCTIONS CRITIQUES :
                     "content": msg.content,
                 })
         
+        # Detect question language
+        detected_lang = self._detect_language(query)
+        print(f"🌍 Detected language: {detected_lang}")
+        
+        # Debug: Log the context being sent to LLM
+        print(f"\n{'='*80}")
+        print(f"🔍 CONTEXT SENT TO LLM ({len(chunks)} chunks):")
+        print(f"{'='*80}")
+        for i, chunk in enumerate(chunks, 1):
+            doc_name = chunk.chunk_metadata.get("document_name", "Unknown") if chunk.chunk_metadata else "Unknown"
+            page = chunk.chunk_metadata.get("page", "?") if chunk.chunk_metadata else "?"
+            print(f"\n[Source {i}: {doc_name}, p.{page}]")
+            print(f"Content preview: {chunk.content[:200]}...")
+        print(f"{'='*80}\n")
+        
         # Add context and query
-        user_content = f"""CONTEXTE (extraits de documents réglementaires et internes) :
+        user_content = f"""CONTEXT (excerpts from regulatory and internal documents):
 
 {context}
 
-QUESTION :
+QUESTION (in {detected_lang}):
 {query}
 
-INSTRUCTIONS CRITIQUES :
-1. Ta réponse DOIT utiliser **PLUSIEURS documents du CONTEXTE** et expliquer comment ils interagissent
-2. Cite obligatoirement AU MOINS 2 documents différents (idéalement 3-4)
-3. Croise explicitement les informations : « En combinant [Doc1] et [Doc2] → ... »
-4. Réponse de 400-600 mots avec structure HTML imposée (Résumé exécutif / Analyse détaillée / Sources croisées / À vérifier)
-5. Surligne UNIQUEMENT les extraits directs avec <mark data-source="Nom_Doc, p.X">texte exact</mark>
-6. Pour chaque thème, cherche des infos complémentaires dans différents documents du CONTEXTE"""
+⚠️ CRITICAL INSTRUCTION #1: LANGUAGE
+The question is in **{detected_lang}**.
+You MUST write your ENTIRE answer in **{detected_lang}**.
+ALL headings, explanations, transitions, and text must be in **{detected_lang}**.
+
+CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
+
+1. **LANGUAGE:** Your ENTIRE response MUST be in **{detected_lang.upper()}** - No exceptions
+
+2. **ZERO HALLUCINATION RULE - READ THIS CAREFULLY:**
+   ⚠️ **BEFORE putting <mark> tags, verify the text is ACTUALLY in the CONTEXT above**
+   - Look at the CONTEXT section above
+   - Find the EXACT sentence you want to cite
+   - Copy it WORD-FOR-WORD inside <mark>
+   - If you can't find it in CONTEXT → DON'T use <mark> tags
+   - Better to have 0 citations than 1 false citation
+
+3. **INTELLIGENT SOURCE COMBINATION:**
+   - Use CONTEXT documents when they're relevant (cite with <mark data-source="DocName, p.X">exact text</mark>)
+   - Add your expert knowledge generously (definitions, context, WHY, HOW, best practices)
+   - 1 document is FINE if it answers the question - don't force multiple citations
+   - Multiple documents are GREAT if they add complementary perspectives
+   - Quality and relevance matter more than quantity
+
+3. **CITATION STRATEGY - ZERO TOLERANCE FOR HALLUCINATION:**
+   - <mark> tags = **ONLY if text is VERBATIM in the CONTEXT above**
+   - Read the CONTEXT carefully - if you don't see the exact text → NO <mark> tag
+   - DO NOT paraphrase, translate, or reformulate inside <mark> tags
+   - DO NOT cite from your general knowledge - ONLY from CONTEXT
+   - When in doubt → NO <mark> tag, just write normally
+   
+   **Examples:**
+   - ✅ CONTEXT says: "Le ratio CET1 minimum est fixé à 4,5%"
+     → You write: "<mark data-source="CRD4, p.5">Le ratio CET1 minimum est fixé à 4,5%</mark>"
+   
+   - ❌ CONTEXT says: "minimum CET1 ratio is 4.5%"
+     → DON'T write: "<mark data-source="CRD4, p.5">Le ratio CET1 doit être de 4,5%</mark>" (translation/paraphrase)
+     → DO write: "Le ratio CET1 doit être de 4,5% (based on CRD4 requirements)" (no mark tag)
+   
+   - ✅ If CONTEXT doesn't have the info:
+     → "Selon les réglementations Bâle III, le ratio de levier compare les fonds propres Tier 1 à l'exposition totale. Les documents fournis ne contiennent pas les détails spécifiques de ce calcul."
+   
+   **Bottom line:** ONLY use <mark> if you can copy-paste the exact text from CONTEXT.
+
+4. **FLEXIBLE STRUCTURE:**
+   - Simple question → simple answer (1-2 sections, 200-400 words)
+   - Complex question → detailed analysis (3-5 sections, 500-800 words)
+   - Adapt HTML structure to fit the content naturally
+   - Completeness > arbitrary word limits
+
+5. **BE COMPREHENSIVE:**
+   - Answer the question fully
+   - Add valuable context even if not explicitly asked
+   - Think: "What would a banking compliance expert want to know about this topic?"
+"""
         
         messages.append({"role": "user", "content": user_content})
         

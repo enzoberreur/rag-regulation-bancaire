@@ -21,38 +21,6 @@ class ChatRequest(BaseModel):
     history: Optional[List[ChatMessage]] = []
 
 
-
-
-class ChatResponse(BaseModel):
-    """Chat response model."""
-    content: str
-    citations: List[Citation]
-    metrics: Optional[dict] = None
-
-
-@router.post("/", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    db: Session = Depends(get_db),
-):
-    """
-    Non-streaming chat endpoint.
-    
-    Args:
-        request: Chat request with message and optional history
-        db: Database session
-    """
-    try:
-        rag_service = RAGService(db)
-        response = await rag_service.generate_response(
-            query=request.message,
-            chat_history=request.history,
-        )
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
-
-
 @router.options("/stream")
 async def chat_stream_options():
     """Handle CORS preflight for streaming endpoint."""
