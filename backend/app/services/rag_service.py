@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.models.document import DocumentChunk
 from app.services.embedding_service import EmbeddingService
 from app.services.reranker_service import RerankerService
+from app.services.citation_validator import CitationValidator
 
 
 # System prompt for the LLM - used in both streaming and non-streaming modes
@@ -236,6 +237,7 @@ class RAGService:
         self.db = db
         self.embedding_service = EmbeddingService()
         self.reranker_service = RerankerService()  # 🔥 Ajout du reranker
+        self.citation_validator = CitationValidator(strict_mode=False)  # 🔥 Validateur de citations
         self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
         # Initialize tokenizer for counting tokens
         try:
@@ -744,6 +746,29 @@ CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
         
         print(f"🔍 Streamed content (first 500 chars): {normalized_content[:500]}")
         print(f"🔍 Has [SOURCE:N] markers: {'[SOURCE:' in normalized_content}")
+        
+        # 🔥 VALIDATION DES CITATIONS (anti-hallucination)
+        validation = self.citation_validator.validate_response(normalized_content, chunks)
+        
+        if not validation["is_valid"]:
+            print(f"\n{'='*80}")
+            print(f"⚠️  HALLUCINATION DÉTECTÉE!")
+            print(f"{'='*80}")
+            print(f"Citations totales: {validation['total_citations']}")
+            print(f"Citations invalides: {len(validation['invalid_citations'])}")
+            print(f"Taux d'hallucination: {validation['hallucination_rate']:.1%}")
+            
+            for i, invalid_citation in enumerate(validation['invalid_citations'], 1):
+                print(f"\n❌ Citation invalide #{i}:")
+                print(f"   {invalid_citation}")
+            print(f"{'='*80}\n")
+        else:
+            print(f"✅ Toutes les citations sont valides ({validation['total_citations']} citations)")
+        
+        if validation['warnings']:
+            print(f"⚠️  Avertissements sur les citations:")
+            for warning in validation['warnings']:
+                print(f"   - {warning}")
         
         # CRITICAL: Encode newlines to survive SSE chunking
         # EventSourceResponse splits content into chunks, which can break \n\n formatting

@@ -27,20 +27,27 @@ class DocumentProcessor:
         # Text splitter with semantic chunking - ne coupe JAMAIS au milieu d'une phrase
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1050,  # ~900-1200 tokens (roughly 1.2 chars per token)
-            chunk_overlap=150,  # Plus d'overlap pour garder le contexte
+            chunk_overlap=200,  # 19% overlap (augmenté de 150 à 200) pour meilleur contexte
             length_function=self._count_tokens,
             # Ordre de priorité : sections > paragraphes > phrases > mots
             separators=[
-                "\n\n\n",  # Sections multiples
-                "\n\n",    # Paragraphes
-                "\n",      # Lignes
-                ". ",      # Phrases (avec espace après le point)
-                "! ",      # Phrases exclamatives
-                "? ",      # Phrases interrogatives
-                "; ",      # Points-virgules
-                ", ",      # Virgules (dernier recours)
-                " ",       # Mots
-                ""         # Caractères (évité grâce aux autres)
+                "\n\n\n",           # Sections multiples
+                "\n\n",             # Paragraphes
+                "\nARTICLE ",       # 🔥 Début d'article (réglementaire)
+                "\nArticle ",       # 🔥 Début d'article (minuscule)
+                "\nSECTION ",       # 🔥 Début de section
+                "\nSection ",       # 🔥 Début de section (minuscule)
+                "\nCHAPITRE ",      # 🔥 Début de chapitre
+                "\nChapitre ",      # 🔥 Début de chapitre (minuscule)
+                "\n\n",             # Double saut (répété pour priorité)
+                "\n",               # Lignes simples
+                ". ",               # Phrases (avec espace après le point)
+                "! ",               # Phrases exclamatives
+                "? ",               # Phrases interrogatives
+                "; ",               # Points-virgules
+                ", ",               # Virgules (dernier recours)
+                " ",                # Mots
+                ""                  # Caractères (évité grâce aux autres)
             ],
         )
     
@@ -48,32 +55,96 @@ class DocumentProcessor:
         """Count tokens in text."""
         return len(self.tokenizer.encode(text))
     
+    def _clean_chunk_boundaries(self, chunk: str) -> str:
+        """
+        Nettoie les frontières de chunk pour éviter les coupures en plein milieu.
+        
+        Règles:
+        - Si le chunk commence en minuscule (milieu de phrase) → trouver la première phrase complète
+        - Si le chunk finit sans ponctuation → supprimer la phrase incomplète
+        """
+        if not chunk or len(chunk) < 50:
+            return chunk
+        
+        original_length = len(chunk)
+        
+        # 1. Nettoyer le début si ça commence au milieu d'une phrase
+        if chunk[0].islower() or (len(chunk) > 1 and chunk[0] == ' ' and chunk[1].islower()):
+            # Trouver le premier point suivi d'une majuscule
+            import re
+            match = re.search(r'[\.\!\?]\s+[A-ZÀ-Ÿ]', chunk)
+            if match:
+                # Garder à partir de la majuscule
+                chunk = chunk[match.start() + match.group().index(match.group()[-1]):]
+        
+        # 2. Nettoyer la fin si ça finit au milieu d'une phrase
+        if chunk and not chunk[-1] in '.!?\n':
+            # Trouver le dernier point avant la fin
+            last_period_idx = max(
+                chunk.rfind('.'),
+                chunk.rfind('!'),
+                chunk.rfind('?')
+            )
+            
+            # Garder seulement si on ne perd pas plus de 30% du chunk
+            if last_period_idx > len(chunk) * 0.7:
+                chunk = chunk[:last_period_idx + 1]
+        
+        # Log si on a coupé beaucoup
+        if len(chunk) < original_length * 0.8:
+            chars_removed = original_length - len(chunk)
+            # print(f"   ✂️  Chunk boundary cleaned: removed {chars_removed} chars")
+        
+        return chunk.strip()
+    
     def _detect_section_title(self, text: str) -> Optional[str]:
         """
         Détecte si le texte commence par un titre de section.
         Patterns typiques : "Article 5", "Section 3.2.1", "CHAPITRE II", etc.
+        
+        Amélioration: patterns étendus pour détecter plus de sections.
         """
         import re
         
-        # Prendre les premières lignes
-        first_lines = text.strip().split('\n')[:3]
+        # Prendre les 5 premières lignes (au lieu de 3)
+        first_lines = text.strip().split('\n')[:5]
         
         for line in first_lines:
             line = line.strip()
-            if not line:
+            if not line or len(line) < 3:
                 continue
             
-            # Patterns de titres courants
-            patterns = [
-                r'^(ARTICLE|Article|CHAPITRE|Chapitre|SECTION|Section|TITRE|Titre)\s+[IVX\d]+',
-                r'^[IVX\d]+\.\s+[A-Z]',  # "3. TITRE"
-                r'^[IVX\d]+\.[IVX\d]+',  # "3.2.1"
-                r'^[A-Z][A-Z\s]{5,}$',   # TITRE EN MAJUSCULES (au moins 5 chars)
+            # Pattern 1: Mots-clés de section (haute priorité)
+            section_keywords = [
+                'ARTICLE', 'CHAPITRE', 'CHAPTER', 'SECTION', 'TITRE', 'TITLE', 'PARTIE', 'PART',
+                'ANNEXE', 'ANNEX', 'APPENDIX', 'INTRODUCTION', 'CONCLUSION',
+                'DÉFINITIONS', 'DEFINITIONS', 'GLOSSAIRE', 'GLOSSARY',
+                'PRÉAMBULE', 'PREAMBLE', 'RÉSUMÉ', 'SUMMARY', 'ABSTRACT'
             ]
+            line_upper = line.upper()
+            if any(kw in line_upper for kw in section_keywords):
+                return line[:150]  # Max 150 chars
             
-            for pattern in patterns:
-                if re.match(pattern, line):
-                    return line[:100]  # Max 100 chars pour le titre
+            # Pattern 2: Numérotation classique avec chiffres romains ou arabes
+            if re.match(r'^[IVX\d]+[\.\)\s]+[A-ZÀ-Ÿ]', line):
+                return line[:150]
+            
+            # Pattern 3: Format "X.Y.Z Titre" (multi-niveau)
+            if re.match(r'^\d+(\.\d+)*\s+[A-ZÀ-Ÿ]', line):
+                return line[:150]
+            
+            # Pattern 4: Ligne entière en majuscules (probable titre)
+            # Mais pas si c'est juste des acronymes ou trop court
+            if len(line) > 15 and line.isupper() and not line.endswith('.') and line.count(' ') >= 2:
+                return line[:150]
+            
+            # Pattern 5: Commence par un numéro + point + espace
+            if re.match(r'^\d+\.\s+[A-ZÀ-Ÿ].{5,}', line):
+                return line[:150]
+            
+            # Pattern 6: Format réglementaire "Article X.Y :" ou "Section X :"
+            if re.match(r'^(Article|Section|Chapitre|Partie)\s+[\dIVX]+(\.\d+)?\s*:', line, re.IGNORECASE):
+                return line[:150]
         
         return None
     
@@ -115,16 +186,29 @@ class DocumentProcessor:
             page_chunks = self.text_splitter.split_text(page_content)
             
             for chunk in page_chunks:
+                # 🔥 Nettoyer les frontières du chunk
+                chunk_clean = self._clean_chunk_boundaries(chunk)
+                
+                # Skip si le chunk est devenu trop petit après nettoyage
+                if len(chunk_clean) < 100:
+                    continue
+                
                 # Détecter si le chunk contient un titre de section
-                section_title = self._detect_section_title(chunk)
+                section_title = self._detect_section_title(chunk_clean)
+                
+                # Récupérer les métadonnées de page
+                page_extracted = page_info.get("page_extracted", False)
+                physical_position = page_info.get("physical_position", page_num)
                 
                 langchain_docs.append(
                     LangchainDocument(
-                        page_content=chunk,
+                        page_content=chunk_clean,
                         metadata={
                             "chunk_index": chunk_index,
                             "page": page_num,
-                            "section": section_title  # 🔥 Ajout du titre de section
+                            "page_extracted": page_extracted,  # 🔥 Info si numéro extrait ou physique
+                            "physical_position": physical_position,  # 🔥 Position physique dans le PDF
+                            "section": section_title  # 🔥 Titre de section
                         }
                     )
                 )
@@ -166,7 +250,9 @@ class DocumentProcessor:
                 chunk_metadata={
                     "document_name": doc.name,
                     "document_type": doc.document_type,
-                    "page": langchain_doc.metadata.get("page"),  # Page number
+                    "page": langchain_doc.metadata.get("page"),  # Page number (real or physical)
+                    "page_extracted": langchain_doc.metadata.get("page_extracted", False),  # 🔥 True si extrait du contenu
+                    "physical_position": langchain_doc.metadata.get("physical_position"),  # 🔥 Position physique dans PDF
                     "section": langchain_doc.metadata.get("section"),  # 🔥 Section title
                 },
             )

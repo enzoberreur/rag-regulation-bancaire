@@ -328,17 +328,36 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
                 Get instant answers about regulatory compliance, banking policies, and risk management guidelines. Upload your documents and ask questions to receive AI-powered analysis with relevant citations.
               </p>
               
-              {/* Example prompt */}
-              <div className="mt-4 max-w-2xl">
+              {/* Example prompts */}
+              <div className="mt-4 max-w-2xl space-y-3">
                 <div className="flex items-center gap-2 mb-3">
                   <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
                   <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Try asking</span>
                 </div>
-                <div className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all">
-                  <p className="text-sm text-neutral-600 leading-relaxed italic">
-                    "What are the key requirements of ACPR Regulation 2024-15 regarding the Capital Buffer for climate-related risks? Please detail the calculation methodology, governance requirements, and compliance timeline."
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("How do Basel III capital requirements, CRD4 implementation rules, and ACPR supervision guidelines work together to ensure bank financial stability?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    How do <span className="font-medium text-neutral-700">Basel III capital requirements, CRD4</span> implementation rules, and <span className="font-medium text-neutral-700">ACPR supervision</span> guidelines work together to ensure bank financial stability?
+                  </p>
+                </div>
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("What are the key overlaps between KYC due diligence requirements and AML-CFT obligations for customer onboarding?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    What are the key overlaps between <span className="font-medium text-neutral-700">KYC due diligence</span> requirements and <span className="font-medium text-neutral-700">AML-CFT obligations</span> for customer onboarding?
+                  </p>
+                </div>
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("How does the EU AI Act impact the use of automated systems in banking compliance, particularly for KYC verification and risk scoring?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    How does the <span className="font-medium text-neutral-700">EU AI Act</span> impact automated systems in banking compliance, particularly for <span className="font-medium text-neutral-700">KYC verification and risk scoring</span>?
                   </p>
                 </div>
               </div>
