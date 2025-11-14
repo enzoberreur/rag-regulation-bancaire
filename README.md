@@ -1,10 +1,12 @@
-# HexaBank Compliance Assistant 🏦
+# 🏦 LLM Banking Compliance Assistant
 
-An enterprise-grade AI-powered RAG (Retrieval-Augmented Generation) system designed to help compliance officers at HexaBank interpret and analyze complex regulatory documents from ACPR, ECB, CRD4, Bâle III, and EU AI Act.
+A professional RAG-powered application for intelligent querying of banking and financial regulatory documents with advanced citation and source tracking.
+
+![Dashboard](dashboard.png)
 
 ## 🎯 Overview
 
-The HexaBank Compliance Assistant is a production-ready full-stack application featuring a **professional RAG pipeline** with:
+Enterprise-grade RAG system for banking compliance with professional multi-stage retrieval, semantic chunking, and real-time citations.
 
 ### Core Capabilities
 - **🔄 Query Reformulation**: AI-powered query enhancement for improved retrieval accuracy
@@ -172,6 +174,25 @@ USING hnsw (embedding vector_cosine_ops);
 - **PostgreSQL**: 15+ with pgvector extension
 - **OpenAI API Key**: For GPT-4 and embeddings
 
+## 💡 Example Queries
+
+The system is designed to handle complex, multi-part regulatory questions requiring deep analysis across multiple documents:
+
+**Example 1: Credit Risk Mitigation in Large Exposures**
+```
+Using CRR Articles 399, 401 and 403, explain how a bank should treat credit risk mitigation techniques when calculating large exposures, and illustrate the process with a step-by-step example. Highlight any supervisory conditions mentioned by the ACPR.
+```
+
+**Example 2: IRRBB Stress-Testing Framework**
+```
+Design a full IRRBB stress-testing framework consistent with EBA/GL/2022/14 and RTS EBA/RTS/2022/10. Include: (a) the modelling of non-maturity deposit behavioural maturities with the 5-year cap exception, (b) the Supervisory Outlier Test for abnormal sensitivities, and (c) parallel shock scenarios of ±200bp. Identify which assumptions require supervisor approval.
+```
+
+**Example 3: Synthetic Securitisation SRT Assessment**
+```
+Given Articles 244–245 CRR, assess whether a synthetic securitisation achieves significant credit risk transfer. Include both mechanical tests and qualitative supervisory assessment requirements. Refer to how the Capital Markets Recovery Package modifies SRT conditions for on-balance-sheet STS transactions.
+```
+
 ## 🚀 Quick Start
 
 ### 1. Clone and Setup Environment
@@ -290,10 +311,8 @@ LLMOPS-product/
 
 #### Query Reformulation
 ```python
-Original: "Quels sont les ratios de capital ?"
-Reformed: "Quels sont les ratios de capital réglementaires requis par Bâle III 
-          et la CRD4 pour les établissements bancaires ? Ratios de fonds propres, 
-          Common Equity Tier 1 (CET1), coussin de conservation."
+Original: "Using CRR Articles 399, 401 and 403, explain how a bank should treat credit risk mitigation techniques when calculating large exposures, and illustrate the process with a step-by-step example. Highlight any supervisory conditions mentioned by the ACPR"
+Reformed: "Articles 399, 401, 403 du CRR : traitement des techniques d'atténuation du risque de crédit (CRM) dans le calcul des grandes expositions. Expliquer la méthodologie de substitution des garanties, les conditions de reconnaissance des sûretés réelles, et les exigences de concentration. Illustrer par un exemple détaillé avec calcul avant/après CRM. Identifier les conditions de validation superviseur ACPR selon instruction 2014-I-16."
 ```
 - Uses GPT-4o-mini (temp=0.3) for consistency
 - Adds technical synonyms and regulatory context
@@ -575,7 +594,7 @@ POST /api/chat                        # Non-streaming chat
 curl -X POST http://localhost:8000/api/chat/stream \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "What are the key requirements of ACPR Regulation 2024-15?",
+    "message": "Design a full IRRBB stress-testing framework consistent with EBA/GL/2022/14 and RTS EBA/RTS/2022/10. Include: (a) the modelling of non-maturity deposit behavioural maturities with the 5-year cap exception, (b) the Supervisory Outlier Test for abnormal sensitivities, and (c) parallel shock scenarios of ±200bp. Identify which assumptions require supervisor approval.",
     "history": []
   }'
 ```

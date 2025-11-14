@@ -13,11 +13,11 @@ class RerankerService:
     Améliore la précision du retrieval en réordonnant les chunks par pertinence réelle.
     """
     
-    def __init__(self):
-        # Modèle cross-encoder multilingue optimisé pour FR/EN
-        # ms-marco-MiniLM est rapide et performant
-        print("🔄 Chargement du modèle de reranking...")
-        self.model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3"):
+        # Modèle cross-encoder multilingue de dernière génération
+        # bge-reranker-v2-m3: optimisé FR/EN/100+ langues, scores normalisés 0-1
+        print(f"🔄 Chargement du modèle de reranking: {model_name}...")
+        self.model = CrossEncoder(model_name)
         print("✅ Modèle de reranking chargé")
     
     def rerank(

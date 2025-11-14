@@ -2,6 +2,7 @@
 Service for processing documents: extracting text, chunking, and generating embeddings.
 """
 import os
+import re
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,6 +12,86 @@ import tiktoken
 from app.models.document import Document, DocumentChunk
 from app.services.embedding_service import EmbeddingService
 from app.services.text_extractor import TextExtractor
+from app.core.config import settings
+
+
+class SemanticSentenceChunker:
+    """
+    Chunking sémantique par phrases - approche professionnelle.
+    Groupe N phrases ensemble avec overlap pour maintenir le contexte.
+    """
+    
+    def __init__(self, sentences_per_chunk: int = 5, overlap: int = 1):
+        """
+        Args:
+            sentences_per_chunk: Nombre de phrases par chunk
+            overlap: Nombre de phrases en commun entre chunks consécutifs
+        """
+        self.sentences_per_chunk = sentences_per_chunk
+        self.overlap = overlap
+        
+        # Patterns pour détecter les fins de phrases
+        # Gère: ". ", "! ", "? " mais ignore "M. ", "Dr. ", etc.
+        self.sentence_pattern = re.compile(
+            r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!)\s+(?=[A-Z])'
+        )
+    
+    def split_text(self, text: str) -> List[str]:
+        """
+        Découpe le texte en chunks de N phrases avec overlap.
+        
+        Args:
+            text: Texte à découper
+        
+        Returns:
+            Liste de chunks (strings)
+        """
+        # 1. Découper en phrases
+        sentences = self._split_into_sentences(text)
+        
+        if not sentences:
+            return []
+        
+        # 2. Grouper en chunks avec overlap
+        chunks = []
+        i = 0
+        
+        while i < len(sentences):
+            # Prendre N phrases
+            chunk_sentences = sentences[i:i + self.sentences_per_chunk]
+            
+            # Joindre en un seul chunk
+            chunk = ' '.join(chunk_sentences)
+            chunks.append(chunk.strip())
+            
+            # Avancer de (N - overlap) phrases
+            step = max(1, self.sentences_per_chunk - self.overlap)
+            i += step
+        
+        return chunks
+    
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """
+        Découpe le texte en phrases individuelles.
+        Gère les cas complexes (M., Dr., numéros, etc.)
+        """
+        # Nettoyer le texte
+        text = text.strip()
+        
+        if not text:
+            return []
+        
+        # Découper avec regex
+        sentences = self.sentence_pattern.split(text)
+        
+        # Nettoyer chaque phrase
+        cleaned = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence and len(sentence) > 10:  # Ignorer les phrases trop courtes
+                cleaned.append(sentence)
+        
+        return cleaned
 
 
 class DocumentProcessor:
@@ -24,32 +105,44 @@ class DocumentProcessor:
         # Initialize tokenizer for counting tokens
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
-        # Text splitter with semantic chunking - ne coupe JAMAIS au milieu d'une phrase
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1050,  # ~900-1200 tokens (roughly 1.2 chars per token)
-            chunk_overlap=200,  # 19% overlap (augmenté de 150 à 200) pour meilleur contexte
-            length_function=self._count_tokens,
-            # Ordre de priorité : sections > paragraphes > phrases > mots
-            separators=[
-                "\n\n\n",           # Sections multiples
-                "\n\n",             # Paragraphes
-                "\nARTICLE ",       # 🔥 Début d'article (réglementaire)
-                "\nArticle ",       # 🔥 Début d'article (minuscule)
-                "\nSECTION ",       # 🔥 Début de section
-                "\nSection ",       # 🔥 Début de section (minuscule)
-                "\nCHAPITRE ",      # 🔥 Début de chapitre
-                "\nChapitre ",      # 🔥 Début de chapitre (minuscule)
-                "\n\n",             # Double saut (répété pour priorité)
-                "\n",               # Lignes simples
-                ". ",               # Phrases (avec espace après le point)
-                "! ",               # Phrases exclamatives
-                "? ",               # Phrases interrogatives
-                "; ",               # Points-virgules
-                ", ",               # Virgules (dernier recours)
-                " ",                # Mots
-                ""                  # Caractères (évité grâce aux autres)
-            ],
-        )
+        # Initialize chunking strategy based on config
+        if settings.chunking_strategy == "sentence":
+            print(f"🔤 Using semantic sentence chunking: {settings.sentences_per_chunk} sentences/chunk, overlap={settings.sentence_overlap}")
+            self.sentence_chunker = SemanticSentenceChunker(
+                sentences_per_chunk=settings.sentences_per_chunk,
+                overlap=settings.sentence_overlap
+            )
+            self.text_splitter = None
+        else:
+            print(f"🔢 Using token-based chunking: {settings.chunk_size} tokens, overlap={settings.chunk_overlap}")
+            self.sentence_chunker = None
+            # Text splitter with semantic chunking - ne coupe JAMAIS au milieu d'une phrase
+            # Optimisé pour documents réglementaires : chunks plus courts, meilleur overlap
+            self.text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=settings.chunk_size,
+                chunk_overlap=settings.chunk_overlap,
+                length_function=self._count_tokens,
+                # Ordre de priorité : sections > paragraphes > phrases > mots
+                separators=[
+                    "\n\n\n",           # Sections multiples
+                    "\n\n",             # Paragraphes
+                    "\nARTICLE ",       # 🔥 Début d'article (réglementaire)
+                    "\nArticle ",       # 🔥 Début d'article (minuscule)
+                    "\nSECTION ",       # 🔥 Début de section
+                    "\nSection ",       # 🔥 Début de section (minuscule)
+                    "\nCHAPITRE ",      # 🔥 Début de chapitre
+                    "\nChapitre ",      # 🔥 Début de chapitre (minuscule)
+                    "\n\n",             # Double saut (répété pour priorité)
+                    "\n",               # Lignes simples
+                    ". ",               # Phrases (avec espace après le point)
+                    "! ",               # Phrases exclamatives
+                    "? ",               # Phrases interrogatives
+                    "; ",               # Points-virgules
+                    ", ",               # Virgules (dernier recours)
+                    " ",                # Mots
+                    ""                  # Caractères (évité grâce aux autres)
+                ],
+            )
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text."""
@@ -182,8 +275,13 @@ class DocumentProcessor:
             page_num = page_info["page"]
             page_content = page_info["content"]
             
-            # Split this page's content into chunks
-            page_chunks = self.text_splitter.split_text(page_content)
+            # Split this page's content into chunks (sentence-based or token-based)
+            if self.sentence_chunker:
+                # Sentence-based chunking
+                page_chunks = self.sentence_chunker.split_text(page_content)
+            else:
+                # Token-based chunking
+                page_chunks = self.text_splitter.split_text(page_content)
             
             for chunk in page_chunks:
                 # 🔥 Nettoyer les frontières du chunk

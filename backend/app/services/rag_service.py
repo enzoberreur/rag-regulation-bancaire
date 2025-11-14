@@ -120,8 +120,16 @@ For your expert knowledge, write normally WITHOUT <mark> tags.
 **Always conclude with:**
 <h3>Sources</h3>
 <ul>
-<li>[List only documents you actually cited with <mark> tags]</li>
+<li>Document Name, page X</li>
+<li>Document Name, page Y</li>
 </ul>
+
+**CRITICAL for Sources section:**
+- List ONLY the documents you actually cited with <mark> tags
+- Format: "Document Name, page X" (example: "CYBER.pdf, p.30")
+- Do NOT write text excerpts or "..." snippets
+- Do NOT write descriptions like "risque systémique..." or "les APT fonctionnent..."
+- Just the document names and page numbers
 
 **Key principles:**
 - Adapt structure to question: simple question = simple answer, complex question = detailed analysis
@@ -236,7 +244,7 @@ class RAGService:
     def __init__(self, db: Session):
         self.db = db
         self.embedding_service = EmbeddingService()
-        self.reranker_service = RerankerService()  # 🔥 Ajout du reranker
+        self.reranker_service = RerankerService(model_name=settings.reranker_model)  # 🔥 Nouveau reranker configurable
         self.citation_validator = CitationValidator(strict_mode=False)  # 🔥 Validateur de citations
         self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
         # Initialize tokenizer for counting tokens
@@ -409,6 +417,51 @@ Reformulation optimisée :"""
         
         return selected_chunks, selected_scores
     
+    def _apply_diversity(
+        self,
+        chunks: List[DocumentChunk],
+        scores: List[float],
+        max_per_doc: int = 3,
+        target_docs: int = 3
+    ) -> tuple[List[DocumentChunk], List[float]]:
+        """
+        Apply document diversity strategy: prioritize different documents.
+        
+        Args:
+            chunks: Sorted list of chunks (best first)
+            scores: Corresponding scores
+            max_per_doc: Maximum chunks per document
+            target_docs: Target number of different documents
+        
+        Returns:
+            (diversified chunks, diversified scores)
+        """
+        selected_chunks = []
+        selected_scores = []
+        doc_count = {}
+        
+        # Pass 1: Take top chunk from each document (up to target_docs)
+        for chunk, score in zip(chunks, scores):
+            if len(doc_count) >= target_docs:
+                break
+            
+            doc_id = chunk.document_id
+            if doc_id not in doc_count:
+                selected_chunks.append(chunk)
+                selected_scores.append(score)
+                doc_count[doc_id] = 1
+        
+        # Pass 2: Fill remaining slots from same documents
+        for chunk, score in zip(chunks, scores):
+            doc_id = chunk.document_id
+            if chunk not in selected_chunks and doc_count.get(doc_id, 0) < max_per_doc:
+                selected_chunks.append(chunk)
+                selected_scores.append(score)
+                doc_count[doc_id] = doc_count.get(doc_id, 0) + 1
+        
+        print(f"🎯 Diversity applied: {len(doc_count)} documents, distribution: {doc_count}")
+        return selected_chunks, selected_scores
+    
     async def _build_context(self, chunks: List[DocumentChunk]) -> str:
         """
         Build context string from relevant chunks.
@@ -493,10 +546,12 @@ Question: "{query}"
 Is this question relevant to:
 - Banking regulations (Basel, CRD4, ACPR, ECB, MiFID, GDPR, AI Act, DORA)
 - Compliance (KYC, AML-CFT, LCB-FT, data protection)
-- Financial risk management
-- Internal controls
+- Financial risk management (credit, market, operational, cyber risks)
+- Internal controls and audit
 - Banking supervision
+- Cybersecurity and IT security in banking
 - Technology/AI regulations affecting banking
+- Fraud prevention and security measures
 
 Answer ONLY with: "YES" or "NO"
 
@@ -547,9 +602,9 @@ Answer:"""
         if not is_relevant:
             # Question hors sujet - réponse immédiate
             if detected_lang == "French":
-                out_of_scope_msg = "Je suis un assistant spécialisé en conformité bancaire. Je peux uniquement répondre à des questions sur la réglementation bancaire (Bâle III, CRD4, ACPR), la conformité (KYC, LCB-FT), les risques financiers et le contrôle interne. Votre question ne concerne pas ces domaines."
+                out_of_scope_msg = "Je suis un assistant spécialisé en conformité bancaire. Je peux uniquement répondre à des questions sur la réglementation bancaire (Bâle III, CRD4, ACPR), la conformité (KYC, LCB-FT), les risques financiers (crédit, marché, opérationnel, cyber), la cybersécurité bancaire et le contrôle interne. Votre question ne concerne pas ces domaines."
             else:
-                out_of_scope_msg = "I am a banking compliance assistant. I can only answer questions about banking regulations (Basel III, CRD4, ACPR), compliance (KYC, AML-CFT), financial risks, and internal controls. Your question is outside these topics."
+                out_of_scope_msg = "I am a banking compliance assistant. I can only answer questions about banking regulations (Basel III, CRD4, ACPR), compliance (KYC, AML-CFT), financial risks (credit, market, operational, cyber), banking cybersecurity, and internal controls. Your question is outside these topics."
             
             yield f"data: {out_of_scope_msg}\n\n"
             yield f"data: {json.dumps({'type': 'citations', 'data': []})}\n\n"
@@ -574,18 +629,48 @@ Answer:"""
         # Generate query embedding (sur la query reformulée)
         query_embedding = await self.embedding_service.generate_embedding(reformulated_query)
         
-        # 🔥 2. Recherche vectorielle large (2x plus de résultats)
-        initial_top_k = settings.top_k_results * 2  # 16 chunks au lieu de 8
-        chunks, similarity_scores = await self._search_relevant_chunks(query_embedding, top_k=initial_top_k)
+        # 🔥 2. Recherche vectorielle large (initial_top_k = 20 par défaut)
+        chunks, similarity_scores = await self._search_relevant_chunks(
+            query_embedding, 
+            top_k=settings.initial_top_k
+        )
         
-        # 🔥 3. Reranking pour garder les meilleurs
+        # 🔥 3. Reranking pour scorer précisément la pertinence
         if chunks:
             chunks, similarity_scores = self.reranker_service.rerank(
-                query=query,  # On utilise la query ORIGINALE pour le reranking
+                query=query,  # Query ORIGINALE pour le reranking
                 chunks=chunks,
                 similarity_scores=similarity_scores,
-                top_k=settings.top_k_results  # Garder seulement les 8 meilleurs
+                top_k=None  # Pas de limite ici, on filtre après
             )
+            
+            # 🔥 4. Filtrage par seuil de rerank (NOUVEAU!)
+            # Élimine les chunks avec score < rerank_threshold
+            filtered = [(c, s) for c, s in zip(chunks, similarity_scores) 
+                       if s >= settings.rerank_threshold]
+            
+            if filtered:
+                chunks, similarity_scores = zip(*filtered)
+                chunks = list(chunks)
+                similarity_scores = list(similarity_scores)
+                print(f"✅ Après filtrage (seuil={settings.rerank_threshold}): {len(chunks)} chunks conservés")
+            else:
+                chunks, similarity_scores = [], []
+                print(f"⚠️  Aucun chunk au-dessus du seuil de rerank ({settings.rerank_threshold})")
+            
+            # 🔥 5. Diversification optionnelle (si enforce_diversity=True)
+            if settings.enforce_diversity and chunks:
+                chunks, similarity_scores = self._apply_diversity(
+                    chunks, 
+                    similarity_scores, 
+                    max_per_doc=3,
+                    target_docs=min(3, len(set(c.document_id for c in chunks)))
+                )
+            
+            # 🔥 6. Limiter au top_k final
+            if len(chunks) > settings.top_k_results:
+                chunks = chunks[:settings.top_k_results]
+                similarity_scores = similarity_scores[:settings.top_k_results]
         
         # Calculate average similarity score
         avg_similarity = sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0.0
@@ -748,27 +833,29 @@ CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
         print(f"🔍 Has [SOURCE:N] markers: {'[SOURCE:' in normalized_content}")
         
         # 🔥 VALIDATION DES CITATIONS (anti-hallucination)
-        validation = self.citation_validator.validate_response(normalized_content, chunks)
+        # Note: Désactivé car le fluotage est fait côté frontend, pas avec des balises <mark>
+        # Le LLM génère du texte normal, et le frontend surligne les extraits trouvés dans les sources
+        # validation = self.citation_validator.validate_response(normalized_content, chunks)
         
-        if not validation["is_valid"]:
-            print(f"\n{'='*80}")
-            print(f"⚠️  HALLUCINATION DÉTECTÉE!")
-            print(f"{'='*80}")
-            print(f"Citations totales: {validation['total_citations']}")
-            print(f"Citations invalides: {len(validation['invalid_citations'])}")
-            print(f"Taux d'hallucination: {validation['hallucination_rate']:.1%}")
-            
-            for i, invalid_citation in enumerate(validation['invalid_citations'], 1):
-                print(f"\n❌ Citation invalide #{i}:")
-                print(f"   {invalid_citation}")
-            print(f"{'='*80}\n")
-        else:
-            print(f"✅ Toutes les citations sont valides ({validation['total_citations']} citations)")
-        
-        if validation['warnings']:
-            print(f"⚠️  Avertissements sur les citations:")
-            for warning in validation['warnings']:
-                print(f"   - {warning}")
+        # if not validation["is_valid"]:
+        #     print(f"\n{'='*80}")
+        #     print(f"⚠️  HALLUCINATION DÉTECTÉE!")
+        #     print(f"{'='*80}")
+        #     print(f"Citations totales: {validation['total_citations']}")
+        #     print(f"Citations invalides: {len(validation['invalid_citations'])}")
+        #     print(f"Taux d'hallucination: {validation['hallucination_rate']:.1%}")
+        #     
+        #     for i, invalid_citation in enumerate(validation['invalid_citations'], 1):
+        #         print(f"\n❌ Citation invalide #{i}:")
+        #         print(f"   {invalid_citation}")
+        #     print(f"{'='*80}\n")
+        # else:
+        #     print(f"✅ Toutes les citations sont valides ({validation['total_citations']} citations)")
+        # 
+        # if validation['warnings']:
+        #     print(f"⚠️  Avertissements sur les citations:")
+        #     for warning in validation['warnings']:
+        #         print(f"   - {warning}")
         
         # CRITICAL: Encode newlines to survive SSE chunking
         # EventSourceResponse splits content into chunks, which can break \n\n formatting
