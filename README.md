@@ -132,19 +132,3 @@ DELETE /api/documents/{id}      # Delete document
 4. **Document Diversity**: Max 3 chunks per document
 5. **LLM Generation**: GPT-4o-mini with streaming, cited responses
 
-## Documentation
-
-- [RAG Improvements Guide](backend/RAG_IMPROVEMENTS_PRO.md)
-- [Backend Setup](backend/SETUP.md)
-
-## Contributing
-
-Educational project for Albert School Year 2 - LLM Ops program.
-
-## License
-
-Educational use only. No commercial use without permission.
-
----
-
-**Developer:** Enzo Berreur | **Program:** Albert School Year 2 | **Year:** 2024-2025
