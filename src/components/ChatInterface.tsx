@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { DocumentUpload } from './DocumentUpload';
+import { LoadingAnimation } from './LoadingAnimation';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Send, Paperclip } from 'lucide-react';
@@ -12,6 +13,7 @@ import {
   SheetTrigger,
 } from './ui/sheet';
 import { Badge } from './ui/badge';
+import { streamChatMessage, type ChatMessage as ApiChatMessage } from '../services/api';
 
 interface Message {
   id: string;
@@ -43,41 +45,11 @@ interface ChatInterfaceProps {
   onUpdateMetrics: (metrics: any) => void;
   documents: UploadedDocument[];
   onDocumentUpload: (doc: UploadedDocument) => void;
+  onDocumentRemove?: (id: string) => void;
 }
 
-const mockAssistantResponse = (query: string): { content: string; citations: Citation[] } => {
-  const responses = {
-    default: {
-      content: "Based on the ACPR Regulation 2024-15, Article 12 requires enhanced capital requirements for climate-related exposures. Cross-referencing with HexaBank's Risk Management Policy (RMP-2024-03), Section 4.2, there appears to be a gap in the current climate risk assessment framework.\n\nRecommended actions:\n1. Update RMP-2024-03 Section 4.2 to include climate exposure quantification\n2. Implement monthly reporting requirements as specified in Article 12(3)\n3. Establish dedicated Climate Risk Committee per Article 15",
-      citations: [
-        { id: '1', text: 'ACPR Regulation 2024-15, Article 12: Climate Capital Requirements', source: 'ACPR Regulation', url: '/regulations/acpr-2024-15' },
-        { id: '2', text: 'HexaBank RMP-2024-03, Section 4.2: Risk Assessment Framework', source: 'Internal Policy', url: '/policies/rmp-2024-03' },
-        { id: '3', text: 'Non-conformity identified: Missing climate risk quantification', source: 'Analysis Result', url: '/analysis' }
-      ]
-    }
-  };
-  
-  return responses.default;
-};
 
-// Simulate SSE streaming by progressively yielding chunks of text
-async function* streamResponse(fullContent: string): AsyncGenerator<string, void, unknown> {
-  const words = fullContent.split(' ');
-  let currentChunk = '';
-  
-  for (let i = 0; i < words.length; i++) {
-    currentChunk += (i > 0 ? ' ' : '') + words[i];
-    
-    // Yield chunks of 2-4 words at a time
-    if (i % (2 + Math.floor(Math.random() * 3)) === 0 || i === words.length - 1) {
-      yield currentChunk;
-      // Simulate network delay (20-60ms per chunk)
-      await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 40));
-    }
-  }
-}
-
-export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateMetrics, documents, onDocumentUpload }: ChatInterfaceProps) {
+export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateMetrics, documents, onDocumentUpload, onDocumentRemove }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -102,11 +74,11 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
 
     const updatedMessages = [...messages, userMessage];
     onUpdateMessages(updatedMessages);
+    const userInput = input;
     setInput('');
     setIsLoading(true);
 
     const startTime = Date.now();
-    const { content, citations } = mockAssistantResponse(input);
     
     // Create a placeholder message for streaming
     const assistantMessageId = (Date.now() + 1).toString();
@@ -114,7 +86,7 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
       id: assistantMessageId,
       role: 'assistant',
       content: '',
-      citations,
+      citations: [],
       timestamp: new Date()
     };
 
@@ -128,36 +100,208 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
     abortControllerRef.current = new AbortController();
 
     try {
-      // Simulate initial connection delay
-      await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
+      // Convert messages to API format
+      const chatHistory: ApiChatMessage[] = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
 
-      // Stream the response
+      // Stream the response from backend
       let streamedContent = '';
-      for await (const chunk of streamResponse(content)) {
+      let citations: Citation[] = [];
+      let metricsReceived = false;
+      
+      for await (const chunk of streamChatMessage(
+        {
+          message: userInput,
+          session_id: sessionId,
+          history: chatHistory,
+        },
+        abortControllerRef.current?.signal
+      )) {
         if (abortControllerRef.current?.signal.aborted) break;
         
-        streamedContent = chunk;
+        // Try to parse JSON chunks (citations or metrics)
+        let isJsonChunk = false;
+        try {
+          // Clean chunk before parsing (remove any SSE prefix if present)
+          let cleanChunkForParsing = chunk.trim();
+          if (cleanChunkForParsing.startsWith('data: ')) {
+            cleanChunkForParsing = cleanChunkForParsing.slice(6).trim();
+          }
+          
+          const parsed = JSON.parse(cleanChunkForParsing);
+          
+          if (parsed.type === 'citations' && parsed.data) {
+            citations = parsed.data.map((c: any) => ({
+              id: c.id || String(Math.random()),
+              text: c.text || c.source || 'Citation',
+              source: c.source || 'Document',
+              url: c.url,
+            }));
+            console.log('📚 Citations received:', citations);
+            // Update message with citations
+            onUpdateMessages([
+              ...updatedMessages,
+              { ...assistantMessage, content: streamedContent, citations }
+            ]);
+            isJsonChunk = true;
+            continue;
+          }
+          
+          if (parsed.type === 'metrics' && parsed.data) {
+            // Update metrics with real values from backend
+            const backendMetrics = parsed.data;
+            const latency = Date.now() - startTime;
+            const cost = typeof backendMetrics.cost === 'number' ? backendMetrics.cost : parseFloat(backendMetrics.cost) || 0;
+            const tokensUsed = typeof backendMetrics.tokens_used === 'number' ? backendMetrics.tokens_used : parseInt(backendMetrics.tokens_used) || 0;
+            const citationsCount = typeof backendMetrics.citations_count === 'number' ? backendMetrics.citations_count : parseInt(backendMetrics.citations_count) || 0;
+            const averageSimilarityScore = typeof backendMetrics.average_similarity_score === 'number' ? backendMetrics.average_similarity_score : parseFloat(backendMetrics.average_similarity_score) || 0;
+            
+            console.log('💰 Metrics received:', {
+              cost,
+              tokensUsed,
+              citationsCount,
+              averageSimilarityScore,
+              raw: backendMetrics
+            });
+            
+            onUpdateMetrics({
+              latency,
+              errors: 0,
+              cost,
+              tokensUsed,
+              citationsCount,
+              averageSimilarityScore
+            });
+            metricsReceived = true;
+            isJsonChunk = true;
+            continue;
+          }
+        } catch (e) {
+          // Not JSON, treat as text content
+          // Only log if it looks like it might be JSON to avoid spam
+          if (chunk.trim().startsWith('{')) {
+            console.debug('Failed to parse as JSON:', chunk.substring(0, 100));
+          }
+        }
+        
+        // Skip JSON chunks (they should have been handled above)
+        if (isJsonChunk) continue;
+        
+        // Skip chunks that look like JSON (citations or metrics that weren't parsed)
+        // This handles partial JSON chunks that might leak through
+        const trimmedChunk = chunk.trim();
+        
+        // Check for JSON patterns more thoroughly
+        const looksLikeJson = trimmedChunk.startsWith('{') && (
+          trimmedChunk.includes('"type"') || 
+          trimmedChunk.includes('"citations"') || 
+          trimmedChunk.includes('"metrics"') ||
+          trimmedChunk.includes('"tokens_used"') ||
+          trimmedChunk.includes('"cost"') ||
+          trimmedChunk.includes('"data"') ||
+          trimmedChunk.includes('"id"') ||
+          trimmedChunk.includes('"source"')
+        );
+        
+        if (looksLikeJson) {
+          continue;
+        }
+        
+        // Skip [DONE] marker
+        if (trimmedChunk === '[DONE]') continue;
+        
+        // Backend sends formatted text with encoded newlines (to survive SSE chunking)
+        let cleanChunk = chunk;
+        
+        // Remove SSE prefix if present
+        if (cleanChunk.startsWith('data: ')) {
+          cleanChunk = cleanChunk.slice(6);
+        }
+        
+        // Skip truly empty chunks
+        if (cleanChunk.trim() === '') continue;
+        
+        // Accumulate chunks (SSE splits the content into multiple pieces)
+        streamedContent += cleanChunk;
         onUpdateMessages([
           ...updatedMessages,
-          { ...assistantMessage, content: chunk }
+          { ...assistantMessage, content: streamedContent, citations }
         ]);
       }
+      
+      // Apply final cleanup ONCE after streaming is complete
+      // This ensures smooth streaming without visual jumps
+      let finalContent = streamedContent;
+      
+      // More aggressive JSON removal - match any JSON-like structure
+      // Remove citations JSON (can be multi-line or single line)
+      finalContent = finalContent.replace(/\{"type":\s*"citations",\s*"data":\s*\[[^\]]*\]\}/gs, '');
+      finalContent = finalContent.replace(/\{"type":\s*"metrics",\s*"data":\s*\{[^}]*\}\}/gs, '');
+      // Remove any remaining JSON-like patterns
+      finalContent = finalContent.replace(/\{[^{}]*"type"[^{}]*"citations"[^{}]*\}/gs, '');
+      finalContent = finalContent.replace(/\{[^{}]*"type"[^{}]*"metrics"[^{}]*\}/gs, '');
+      finalContent = finalContent.replace(/\[DONE\]/g, '');
+      
+      // Remove common source mention patterns (the frontend handles citations separately)
+      finalContent = finalContent.replace(/\*\*Sources?\s*:\*\*/gi, '');
+      finalContent = finalContent.replace(/Sources?\s*:\s*/gi, '');
+      finalContent = finalContent.replace(/\(Source:\s*[^)]+\)/gi, '');
+      finalContent = finalContent.replace(/Source:\s*[^\n]+/gi, '');
+      
+      // Remove ALL "data:" patterns aggressively
+      // Decode the newline markers sent by backend
+      // Backend encodes newlines to survive SSE chunking, we decode them here
+      finalContent = finalContent.replace(/<<<BLANK_LINE>>>/g, '\n\n');
+      finalContent = finalContent.replace(/<<<LINE_BREAK>>>/g, '\n');
+      finalContent = finalContent.trim();
+      
+      // Final update with cleaned content and citations (only once at the end)
+      onUpdateMessages([
+        ...updatedMessages,
+        { ...assistantMessage, content: finalContent, citations }
+      ]);
 
       const latency = Date.now() - startTime;
       
       setIsLoading(false);
       setStreamingMessageId(null);
 
-      onUpdateMetrics({
-        latency,
-        errors: 0,
-        cost: 0.0023 + (Math.random() * 0.002),
-        tokensUsed: Math.floor(1000 + Math.random() * 500)
-      });
+      // If metrics weren't received from backend, estimate them
+      if (!metricsReceived) {
+        const estimatedTokens = Math.floor(streamedContent.length / 4);
+        const estimatedCost = (estimatedTokens / 1000) * 0.00015;
+        onUpdateMetrics({
+          latency,
+          errors: 0,
+          cost: estimatedCost,
+          tokensUsed: estimatedTokens
+        });
+      }
     } catch (error) {
       console.error('Streaming error:', error);
       setIsLoading(false);
       setStreamingMessageId(null);
+      
+      // Show error message to user
+      const errorMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        role: 'assistant',
+        content: error instanceof Error 
+          ? `Sorry, an error occurred: ${error.message}. Please make sure the backend is running and try again.`
+          : 'Sorry, an error occurred while processing your request. Please make sure the backend is running and try again.',
+        timestamp: new Date()
+      };
+      onUpdateMessages([...updatedMessages, errorMessage]);
+      
+      // Update metrics with error
+      onUpdateMetrics({
+        latency: Date.now() - startTime,
+        errors: 1,
+        cost: 0,
+        tokensUsed: 0
+      });
     }
   };
 
@@ -173,16 +317,50 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
       <div className="flex-1 overflow-y-auto px-8" ref={scrollRef}>
         <div className="max-w-4xl mx-auto py-8 space-y-8">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-20">
+            <div className="flex flex-col items-start justify-start h-full py-20">
               <div className="w-16 h-16 rounded-2xl bg-[#E6F0FF] flex items-center justify-center mb-6">
                 <svg className="w-8 h-8 text-[#0066FF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-neutral-900 mb-2">Start Regulatory Analysis</h2>
-              <p className="text-sm text-neutral-500 max-w-md">
-                Ask questions about ACPR regulations, ECB guidelines, EU AI Act compliance, or policy mapping
+              <h2 className="text-neutral-900 mb-2 text-2xl font-semibold">Welcome to HexaBank Compliance Assistant</h2>
+              <p className="text-sm text-neutral-500 max-w-2xl mb-6">
+                Get instant answers about regulatory compliance, banking policies, and risk management guidelines. Upload your documents and ask questions to receive AI-powered analysis with relevant citations.
               </p>
+              
+              {/* Example prompts */}
+              <div className="mt-4 max-w-2xl space-y-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Try asking</span>
+                </div>
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("How do Basel III capital requirements, CRD4 implementation rules, and ACPR supervision guidelines work together to ensure bank financial stability?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    How do <span className="font-medium text-neutral-700">Basel III capital requirements, CRD4</span> implementation rules, and <span className="font-medium text-neutral-700">ACPR supervision</span> guidelines work together to ensure bank financial stability?
+                  </p>
+                </div>
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("What are the key overlaps between KYC due diligence requirements and AML-CFT obligations for customer onboarding?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    What are the key overlaps between <span className="font-medium text-neutral-700">KYC due diligence</span> requirements and <span className="font-medium text-neutral-700">AML-CFT obligations</span> for customer onboarding?
+                  </p>
+                </div>
+                <div 
+                  className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
+                  onClick={() => setInput("How does the EU AI Act impact the use of automated systems in banking compliance, particularly for KYC verification and risk scoring?")}
+                >
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    How does the <span className="font-medium text-neutral-700">EU AI Act</span> impact automated systems in banking compliance, particularly for <span className="font-medium text-neutral-700">KYC verification and risk scoring</span>?
+                  </p>
+                </div>
+              </div>
             </div>
           ) : (
             messages.map(message => (
@@ -195,20 +373,15 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
           )}
           
           {isLoading && !streamingMessageId && (
-            <div className="flex gap-3 items-center text-neutral-400">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-[#0066FF] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-[#0066FF] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-[#0066FF] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-sm text-neutral-500">Analyzing regulations...</span>
+            <div className="flex gap-3 items-center">
+              <LoadingAnimation variant="wave" size="md" color="#0066FF" />
+              <span className="text-sm text-neutral-500 font-medium">Analyzing regulations...</span>
             </div>
           )}
         </div>
       </div>
 
-      <div className="border-t border-neutral-200 px-8 py-6 bg-neutral-50/50 backdrop-blur-sm relative flex-shrink-0">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#0066FF]/20 to-transparent"></div>
+      <div className="px-8 py-6 relative flex-shrink-0">
         <div className="max-w-4xl mx-auto">
           <div className="flex gap-3">
             <Sheet>
@@ -239,6 +412,7 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
                   <DocumentUpload
                     documents={documents}
                     onDocumentUpload={onDocumentUpload}
+                    onDocumentRemove={onDocumentRemove}
                   />
                 </div>
               </SheetContent>

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { Plus, Trash2 } from 'lucide-react';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 import { toast } from 'sonner@2.0.3';
+import { UserProfile } from './UserProfile';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,10 +24,11 @@ interface Session {
 
 interface SessionHistoryProps {
   sessions: Session[];
-  currentSessionId: string;
+  currentSessionId: string | null;
   onSelectSession: (sessionId: string) => void;
   onNewSession: () => void;
   onDeleteSession: (sessionId: string) => void;
+  onLogout?: () => void;
 }
 
 export function SessionHistory({
@@ -35,10 +36,24 @@ export function SessionHistory({
   currentSessionId,
   onSelectSession,
   onNewSession,
-  onDeleteSession
+  onDeleteSession,
+  onLogout
 }: SessionHistoryProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+
+  // Helper function to truncate text at word boundary for display
+  const truncateTitle = (text: string, maxLength: number = 40): string => {
+    if (text.length <= maxLength) return text;
+    
+    // Find the last space before maxLength
+    const truncated = text.slice(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    
+    // If we found a space, cut there; otherwise cut at maxLength
+    const cutPoint = lastSpace > 0 ? lastSpace : maxLength;
+    return text.slice(0, cutPoint) + '...';
+  };
 
   const formatDate = (date: Date) => {
     const now = new Date();
@@ -102,8 +117,8 @@ export function SessionHistory({
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[#0066FF] rounded-full"></div>
                 )}
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="text-sm truncate flex-1 pr-8">
-                    {session.title}
+                  <p className="text-sm flex-1 pr-8 overflow-hidden">
+                    {truncateTitle(session.title, 40)}
                   </p>
                 </div>
                 <p className="text-xs text-neutral-400">
@@ -128,19 +143,11 @@ export function SessionHistory({
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-neutral-100 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <ImageWithFallback 
-            src="https://images.unsplash.com/photo-1581065178047-8ee15951ede6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBidXNpbmVzcyUyMHBvcnRyYWl0fGVufDF8fHx8MTc2MTgxNzkwOXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-            alt="Sophie Martin"
-            className="w-8 h-8 rounded-full object-cover"
-          />
-          <div className="flex flex-col">
-            <span className="text-xs text-neutral-700">Sophie Martin</span>
-            <span className="text-[10px] text-neutral-400">Compliance Officer</span>
-          </div>
+      {onLogout && (
+        <div className="p-4 border-t border-neutral-100 flex-shrink-0">
+          <UserProfile onLogout={onLogout} />
         </div>
-      </div>
+      )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
