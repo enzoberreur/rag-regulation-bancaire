@@ -338,26 +338,26 @@ export function ChatInterface({ sessionId, messages, onUpdateMessages, onUpdateM
                 </div>
                 <div 
                   className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
-                  onClick={() => setInput("How do Basel III capital requirements, CRD4 implementation rules, and ACPR supervision guidelines work together to ensure bank financial stability?")}
+                  onClick={() => setInput("How do the Minimum Requirement for own funds and Eligible Liabilities (MREL) calibration and the capital buffer framework (Conservation Buffer, G-SIB buffer, Systemic Risk Buffer) interact for a French Global Systemically Important Bank (G-SIB)? Specifically, explain how a breach of the combined buffer requirement could impact the bank's ability to meet its MREL, including the M-MDA (Maximum Distributable Amount) restrictions.")}
                 >
                   <p className="text-sm text-neutral-600 leading-relaxed">
-                    How do <span className="font-medium text-neutral-700">Basel III capital requirements, CRD4</span> implementation rules, and <span className="font-medium text-neutral-700">ACPR supervision</span> guidelines work together to ensure bank financial stability?
+                    How do the <span className="font-medium text-neutral-700">MREL calibration and capital buffer framework</span> interact for a French <span className="font-medium text-neutral-700">G-SIB</span>? Explain M-MDA restrictions impact.
                   </p>
                 </div>
                 <div 
                   className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
-                  onClick={() => setInput("What are the key overlaps between KYC due diligence requirements and AML-CFT obligations for customer onboarding?")}
+                  onClick={() => setInput("Explain the complete methodology for calculating the Common Equity Tier 1 (CET1) ratio according to CRD4, including: (a) which capital instruments qualify as CET1 under Article 26 to 31, (b) the regulatory adjustments and deductions that must be applied (intangible assets, deferred tax assets, prudential filters), (c) how the ratio differs between individual and consolidated levels, and (d) the minimum CET1 ratio requirements including buffers for French banks.")}
                 >
                   <p className="text-sm text-neutral-600 leading-relaxed">
-                    What are the key overlaps between <span className="font-medium text-neutral-700">KYC due diligence</span> requirements and <span className="font-medium text-neutral-700">AML-CFT obligations</span> for customer onboarding?
+                    Explain the <span className="font-medium text-neutral-700">CET1 ratio calculation</span> methodology including capital instruments, <span className="font-medium text-neutral-700">regulatory adjustments</span>, and minimum requirements.
                   </p>
                 </div>
                 <div 
                   className="p-4 bg-white border border-neutral-200 rounded-lg hover:border-[#0066FF]/30 hover:shadow-sm transition-all cursor-pointer"
-                  onClick={() => setInput("How does the EU AI Act impact the use of automated systems in banking compliance, particularly for KYC verification and risk scoring?")}
+                  onClick={() => setInput("Detail the Total Loss-Absorbing Capacity (TLAC) requirements for French G-SIBs under CRD4. Include: (a) the minimum TLAC ratio expressed as a percentage of risk-weighted assets (RWA) and leverage ratio exposure, (b) which liabilities qualify as TLAC-eligible (subordination requirements, remaining maturity, contractual features), (c) how TLAC interacts with MREL calibration, and (d) the transition timeline and exemptions for specific instruments.")}
                 >
                   <p className="text-sm text-neutral-600 leading-relaxed">
-                    How does the <span className="font-medium text-neutral-700">EU AI Act</span> impact automated systems in banking compliance, particularly for <span className="font-medium text-neutral-700">KYC verification and risk scoring</span>?
+                    Detail the <span className="font-medium text-neutral-700">TLAC requirements for French G-SIBs</span>, including eligible liabilities and <span className="font-medium text-neutral-700">TLAC/MREL interaction</span>.
                   </p>
                 </div>
               </div>

@@ -33,18 +33,21 @@ class Settings(BaseSettings):
     llm_output_price_per_1m: float = 0.60  # $0.60 per 1M output tokens for gpt-4o-mini
     
     # Chunking settings
-    chunking_strategy: str = "sentence"  # "sentence" or "token"
+    chunking_strategy: str = "token"  # "sentence" or "token" - using token for better context
     sentences_per_chunk: int = 5
     sentence_overlap: int = 1
-    chunk_size: int = 800  # Fallback for token-based chunking
-    chunk_overlap: int = 200  # Fallback for token-based chunking
+    chunk_size: int = 1200  # Increased from 800 for better context capture (~900 words)
+    chunk_overlap: int = 300  # Increased from 200 (25% overlap)
+    min_sentence_chunk_chars: int = 0  # Autorise les phrases courtes
+    min_token_chunk_chars: int = 100  # Par défaut pour les chunks basés tokens
     
     # RAG settings
-    top_k_results: int = 8
-    initial_top_k: int = 20
+    top_k_results: int = 15  # Increased from 12 for more context
+    initial_top_k: int = 60  # Increased from 40 for better retrieval coverage
     similarity_threshold: float = 0.65
-    rerank_threshold: float = 0.3
-    enforce_diversity: bool = False
+    rerank_threshold: float = 0.05  # Très bas pour conserver plus de phrases
+    enforce_diversity: bool = False  # Disabled to allow multiple chunks from same document
+    disable_rerank_filter: bool = False  # Permet de garder tous les chunks rerankés
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     
     class Config:

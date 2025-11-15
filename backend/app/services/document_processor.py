@@ -143,6 +143,13 @@ class DocumentProcessor:
                     ""                  # Caractères (évité grâce aux autres)
                 ],
             )
+
+        # Définir la longueur minimale acceptée pour conserver un chunk
+        self.min_chunk_chars = (
+            settings.min_sentence_chunk_chars
+            if self.sentence_chunker
+            else settings.min_token_chunk_chars
+        )
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text."""
@@ -288,7 +295,7 @@ class DocumentProcessor:
                 chunk_clean = self._clean_chunk_boundaries(chunk)
                 
                 # Skip si le chunk est devenu trop petit après nettoyage
-                if len(chunk_clean) < 100:
+                if len(chunk_clean) < self.min_chunk_chars:
                     continue
                 
                 # Détecter si le chunk contient un titre de section

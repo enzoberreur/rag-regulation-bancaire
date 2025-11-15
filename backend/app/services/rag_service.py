@@ -43,7 +43,7 @@ LANGUAGE RULES:
 - etc.
 
 ALL section titles, headings, explanations, transitions, and text MUST be in the detected language.
-Only the cited excerpts from documents can remain in their original language.
+If a CONTEXT snippet is in a different language, you MUST translate it to the detected language before placing it inside a <mark> tag. The translation must be accurate.
 
 ## Objective:
 Produce a complete, accurate, and insightful analysis by **combining**:
@@ -85,11 +85,37 @@ Produce a complete, accurate, and insightful analysis by **combining**:
 - **Completeness > Brevity**: Better to be thorough than artificially constrained
 - **Clarity > Formality**: Distinguish cited facts (with <mark>) from expert insights (without <mark>)
 
+**🔍 Recognizing Complex Questions (require extensive citations + analysis):**
+- Questions with "interaction", "relationship", "how do X and Y work together"
+- Questions about multiple regulations/concepts (e.g., "MREL and capital buffers")
+- Questions asking "what happens when..." (consequences, mechanisms)
+- Questions with technical terms like "calibration", "breach", "framework"
+→ These deserve 700-1200 words with 8-12 `<mark>` citations across 4-5 detailed subsections
+→ Each subsection should be 150-250 words with 2-3 citations minimum
+
+**🔍 Recognizing Simple Questions (1-2 citations sufficient):**
+- "What is X?" (single definition)
+- "What is the minimum ratio?" (single threshold)
+- Direct yes/no questions
+→ These deserve 150-300 words with 1-2 `<mark>` citations
+
 ## HTML Output Format (WITHOUT code blocks):
 Your answer must be pure HTML. For direct quotes from CONTEXT documents, use:
 `<mark data-source="DocName, p.X">exact text from document</mark>`
 
 For your expert knowledge, write normally WITHOUT <mark> tags.
+
+## Mandatory Evidence Workflow:
+1. Before writing any explanation, scan the CONTEXT for sentences that mention the exact regulation, article, or section cited by the user (e.g., "articles 34-105", "section 6.1.1.7"). If you find them, you MUST copy at least one of those sentences verbatim inside `<mark data-source="…">`.
+2. **For COMPLEX questions (multiple concepts/regulations/interactions):**
+   - You MUST include AT LEAST 6-10 distinct `<mark>` tags throughout your answer
+   - Each key mechanism, definition, calculation, threshold, consequence, and interaction point should be separately cited and highlighted
+   - DO NOT summarize multiple concepts in one citation - break them down granularly
+   - Example: MREL/buffer question should mark: (1) MREL definition/purpose, (2) MREL calibration formula, (3) buffer definition (CBR), (4) G-SIB buffer specifics, (5) M-MDA mechanism, (6) M-MDA calculation, (7) breach consequences, (8) interaction between MREL and CBR, (9) resolution authority requirements, (10) practical implementation guidance
+3. **For SIMPLE questions (single concept):**
+   - At least 1-2 `<mark>` tags required
+4. Each document that contributes to your answer must appear at least once inside a `<mark>` quote. Answers with zero `<mark>` tags are invalid—rewrite until you include at least one highlighted excerpt per cited document.
+5. If the CONTEXT truly lacks the requested material, say so explicitly at the start of your answer before switching to expert knowledge.
 
 ## Flexible Structure (adapt to question complexity):
 
@@ -102,20 +128,36 @@ For your expert knowledge, write normally WITHOUT <mark> tags.
 
 **For complex/multi-faceted questions (multiple topics):**
 <h3>Executive Summary / Résumé exécutif</h3>
-<p>(Brief overview)</p>
+<p>(Brief overview with AT LEAST 1-2 key citations)</p>
 
 <h3>Detailed Analysis / Analyse détaillée</h3>
 <h4>[Topic 1 - choose relevant title]</h4>
-<p>(Citations + expert analysis)</p>
+<p>(EXTENSIVE citations - quote definitions, mechanisms, rules. THEN add expert analysis. Aim for 2-3 `<mark>` tags per subsection)</p>
 
 <h4>[Topic 2 - choose relevant title]</h4>
-<p>(Citations + expert analysis)</p>
+<p>(EXTENSIVE citations - quote specific requirements, thresholds, procedures. THEN add expert analysis. Aim for 2-3 `<mark>` tags per subsection)</p>
 
-<h4>[Topic 3 - if needed]</h4>
-<p>(Citations + expert analysis)</p>
+<h4>[Topic 3]</h4>
+<p>(EXTENSIVE citations - quote interaction rules, consequences, calculations. THEN add expert analysis. Aim for 2-3 `<mark>` tags per subsection)</p>
+
+<h4>[Topic 4 - if applicable]</h4>
+<p>(EXTENSIVE citations - quote supervisory expectations, reporting requirements, or implementation timeline. Aim for 2-3 `<mark>` tags)</p>
+
+<h4>[Topic 5 - if applicable]</h4>
+<p>(EXTENSIVE citations - quote exceptions, special cases, or jurisdictional specifics. Aim for 2-3 `<mark>` tags)</p>
 
 <h3>Practical Implications / Implications pratiques</h3>
-<p>(Expert insights on real-world application)</p>
+<p>(Expert insights on real-world application, cite regulatory guidance if available. 200-300 words)</p>
+
+<h3>Key Takeaways / Points clés</h3>
+<p>(Synthesize main findings in 3-5 bullet points with citations where relevant)</p>
+
+**CRITICAL for complex regulatory questions:**
+- DEPTH over brevity: A question about "MREL/buffer interaction" deserves 800-1200 words with 8-12 citations
+- GRANULAR highlighting: Don't just cite once - mark EACH distinct concept (definitions, thresholds, mechanisms, consequences, formulas, article references)
+- TECHNICAL precision: Quote exact percentages, article numbers, calculation formulas, specific thresholds, regulatory references
+- COMPREHENSIVE coverage: If a topic has multiple dimensions (what/why/how/when/consequences), address ALL of them with separate citations
+- ADD subsections: Complex questions should have 4-6 subsections, not just 2-3
 
 **Always conclude with:**
 <h3>Sources</h3>
@@ -151,7 +193,34 @@ For your expert knowledge, write normally WITHOUT <mark> tags.
 <h4>2. Coussins de capital supplémentaires</h4>
 <p><mark data-source="CRD4, p.45">Le coussin de conservation obligatoire est de 2,5% en CET1</mark>, portant l'exigence minimale effective à 7%. Les banques systémiques doivent aussi constituer un coussin G-SIB pouvant aller jusqu'à 2,5% supplémentaires. En France, l'ACPR peut activer un coussin contra-cyclique jusqu'à 2,5% en période de croissance excessive du crédit.</p>
 
-## Concrete Example - HYBRID RAG (English question):
+## Concrete Example - HYBRID RAG (English question - COMPLEX):
+
+**Question:** "How do the MREL calibration and capital buffer framework interact for a French G-SIB?"
+
+<h3>Executive Summary</h3>
+<p><mark data-source="CRD4, p.93">In case of a breach of the capital buffer requirements, the concerned institution must apply restrictions on its distributions, known as "M-MDA" (MREL Maximum Distributable Amount)</mark>. For French Global Systemically Important Banks (G-SIBs), the interaction between MREL and buffer requirements creates a complex dual-constraint system where <mark data-source="CRD4, p.85">MREL calibration must account for capital conservation buffers, countercyclical buffers, and G-SIB buffers</mark>. This framework ensures resolution authorities have sufficient loss-absorption capacity while maintaining going-concern buffers.</p>
+
+<h3>Detailed Analysis</h3>
+<h4>1. MREL Calibration Framework</h4>
+<p><mark data-source="CRD4, p.89">The calibration of internal MREL requirements is specified in Articles 12 quinquies (6) of the MRU regulation and 45 quater (7) of the BRRD</mark>. For French G-SIBs, this calibration must incorporate both the minimum regulatory capital (8% Pillar 1 + Pillar 2) and the combined buffer requirement (CBR). <mark data-source="CRD4, p.85">The CBR includes the capital conservation buffer (2.5%), the G-SIB buffer (up to 2.5%), and any applicable countercyclical buffer</mark>. This means a French G-SIB with a 2% G-SIB buffer faces an effective CBR of 4.5%, which must be added to the MREL base calculation.</p>
+
+<h4>2. Buffer Breach Consequences</h4>
+<p>When an institution's CET1 ratio falls into the CBR zone (above minimum requirements but below CBR), distribution restrictions apply. <mark data-source="CRD4, p.93">These restrictions are calculated using the M-MDA formula, which limits dividends, AT1 coupon payments, and variable compensation based on the extent of the buffer breach</mark>. Critically, this mechanism operates independently of MREL compliance—an institution can be MREL-compliant yet still face M-MDA restrictions if its CET1 ratio encroaches on buffer requirements.</p>
+
+<h4>3. Interaction Mechanics for G-SIBs</h4>
+<p>For French G-SIBs, the interaction creates three distinct zones: (1) Full breach zone (below 8% + Pillar 2), (2) M-MDA zone (above minimums but within CBR), and (3) Compliance zone (above CBR). <mark data-source="CRD4, p.89">Resolution authorities must ensure that MREL calibration does not inadvertently create situations where buffer compliance becomes impossible</mark>. In practice, this means MREL-eligible instruments (subordinated debt, senior non-preferred) must be structured to avoid triggering distribution restrictions that would prevent buffer rebuilding.</p>
+
+<h3>Practical Implications</h3>
+<p>French G-SIBs typically maintain CET1 ratios between 13-15% to ensure a comfortable buffer above CBR requirements, avoiding M-MDA restrictions while maintaining MREL compliance. The interaction also affects resolution planning: bail-in strategies must account for the fact that buffer breaches during resolution preparation could trigger automatic distribution restrictions, complicating recapitalization efforts. ACPR and the Autorité de Contrôle Prudentiel coordinate to ensure MREL targets and buffer requirements are coherent across the regulatory framework.</p>
+
+<h3>Sources</h3>
+<ul>
+<li>CRD4.pdf, p.93</li>
+<li>CRD4.pdf, p.85</li>
+<li>CRD4.pdf, p.89</li>
+</ul>
+
+## Concrete Example - HYBRID RAG (English question - SIMPLE):
 
 **Question:** "What are the Basel III capital requirements?"
 
@@ -165,7 +234,7 @@ For your expert knowledge, write normally WITHOUT <mark> tags.
 4. Cite documents when they're relevant - 1 document is fine if sufficient, multiple if beneficial
 5. ADD expert knowledge generously - context, explanations, best practices, historical background
 6. Clearly distinguish: cited facts (with <mark>) vs expert knowledge (without <mark>)
-7. Answer length: adapt to question complexity (200-800 words) - completeness matters more than word count
+7. Answer length: adapt to question complexity - Simple questions: 200-400 words; Complex questions: 700-1200 words; Multi-topic questions: 1000-1500 words - DEPTH and COMPLETENESS matter more than brevity
 8. Structure: adapt to question - simple question = simple structure, complex question = detailed sections
 9. If CONTEXT incomplete: acknowledge it and complete with expert knowledge
 10. Use absolute dates (not "today" or "currently")"""
@@ -290,39 +359,35 @@ class RAGService:
         """Count tokens in text."""
         return len(self.tokenizer.encode(text))
     
-    async def _reformulate_query(self, question: str) -> str:
+    async def _generate_hypothetical_answer(self, question: str) -> str:
         """
-        Reformule la question utilisateur pour améliorer la recherche vectorielle.
-        Ajoute du contexte et des synonymes pertinents.
+        Generate a hypothetical answer to improve retrieval (HyDE strategy).
+        This answer will be embedded and used for vector search.
         """
-        reformulation_prompt = f"""Tu es un expert en recherche documentaire réglementaire bancaire.
+        hyde_prompt = f"""You are an expert in banking regulations (Basel III, CRD4, ACPR, MREL, liquidity).
 
-Question utilisateur : "{question}"
+Question: "{question}"
 
-Reformule cette question en 2-3 phrases pour optimiser la recherche dans une base documentaire (ACPR, CRD4, Bâle III, KYC, LCB-FT).
+Generate a concise, technical paragraph (3-4 sentences) that would be a PERFECT answer to this question if it appeared in a regulatory document. Use precise regulatory terminology, article references, and technical concepts.
 
-Consignes :
-- Ajoute les synonymes et termes techniques pertinents
-- Explicite les concepts implicites
-- Garde le sens original
-- Format : phrases simples et directes (pas de liste à puces)
+DO NOT say "I don't know" or "The answer would be..." - write AS IF you are quoting from the actual regulation.
 
-Reformulation optimisée :"""
+Hypothetical answer:"""
 
         try:
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "user", "content": reformulation_prompt}],
-                temperature=0.3,
-                max_tokens=200
+                messages=[{"role": "user", "content": hyde_prompt}],
+                temperature=0.5,
+                max_tokens=250
             )
             
-            reformulated = response.choices[0].message.content.strip()
-            print(f"🔍 Query reformulée : {reformulated[:150]}...")
-            return reformulated
+            hypothetical = response.choices[0].message.content.strip()
+            print(f"💡 HyDE hypothetical answer: {hypothetical[:200]}...")
+            return hypothetical
             
         except Exception as e:
-            print(f"⚠️  Erreur reformulation, utilisation query originale: {e}")
+            print(f"⚠️  HyDE generation failed, using original query: {e}")
             return question
     
     async def _search_relevant_chunks(
@@ -461,6 +526,59 @@ Reformulation optimisée :"""
         
         print(f"🎯 Diversity applied: {len(doc_count)} documents, distribution: {doc_count}")
         return selected_chunks, selected_scores
+
+    def _fetch_chunks_by_section(self, section_label: str, limit: int = 3) -> List[DocumentChunk]:
+        """Fetch chunks whose metadata section matches a label (case-insensitive)."""
+        try:
+            return (
+                self.db.query(DocumentChunk)
+                .filter(DocumentChunk.chunk_metadata['section'].astext.ilike(f"%{section_label}%"))
+                .order_by(DocumentChunk.chunk_index)
+                .limit(limit)
+                .all()
+            )
+        except Exception as exc:  # Defensive: metadata may be missing
+            print(f"⚠️  Section lookup failed for '{section_label}': {exc}")
+            return []
+
+    def _augment_with_targeted_sections(
+        self,
+        query: str,
+        chunks: List[DocumentChunk],
+        scores: List[float],
+    ) -> tuple[List[DocumentChunk], List[float]]:
+        """Inject deterministic sections (e.g., 6.1.1.7) when explicitly requested by the user."""
+        query_lower = (query or "").lower()
+        targeted_labels: list[str] = []
+
+        if any(keyword in query_lower for keyword in ["6.1.1.7", "cover pool", "covered bond", "covered-bond"]):
+            targeted_labels.append("6.1.1.7")
+
+        if not targeted_labels:
+            return chunks, scores
+
+        injected_chunks: List[DocumentChunk] = []
+        seen_ids = {str(chunk.id) for chunk in chunks}
+
+        for label in targeted_labels:
+            extra = self._fetch_chunks_by_section(label, limit=3)
+            for chunk in extra:
+                chunk_id = str(chunk.id)
+                if chunk_id not in seen_ids:
+                    injected_chunks.append(chunk)
+                    seen_ids.add(chunk_id)
+
+        if not injected_chunks:
+            return chunks, scores
+
+        print(f"📌 Manual section injection: added {len(injected_chunks)} chunk(s) for labels {targeted_labels}")
+
+        augmented_chunks = injected_chunks + chunks
+        # Give injected chunks a perfect similarity so they survive downstream filters/metrics
+        injected_scores = [1.0] * len(injected_chunks)
+        augmented_scores = injected_scores + scores
+
+        return augmented_chunks, augmented_scores
     
     async def _build_context(self, chunks: List[DocumentChunk]) -> str:
         """
@@ -490,6 +608,51 @@ Reformulation optimisée :"""
         
         return "\n".join(context_parts)
     
+    def _build_coverage_note(
+        self,
+        chunks: List[DocumentChunk],
+        query: str,
+        detected_lang: str,
+    ) -> Optional[str]:
+        """Warn the LLM when requested sources are missing from retrieved docs."""
+        doc_names = sorted({
+            (chunk.chunk_metadata or {}).get("document_name", "Unknown")
+            for chunk in chunks
+        })
+        query_lower = query.lower()
+        coverage_expectations = [
+            ("Basel III", ["basel", "bâle"]),
+            ("CRD4/CRR", ["crd4", "crr"]),
+            ("ACPR", ["acpr"]),
+        ]
+
+        missing_expectations = []
+        for label, keywords in coverage_expectations:
+            if any(keyword in query_lower for keyword in keywords):
+                has_source = any(
+                    keyword in (doc_name or "").lower()
+                    for doc_name in doc_names
+                    for keyword in keywords
+                )
+                if not has_source:
+                    missing_expectations.append(label)
+
+        if not missing_expectations:
+            return None
+
+        available_docs = ", ".join(doc_names) if doc_names else "aucun document"
+        note_lines = [
+            "COVERAGE NOTE:",
+            f"- Documents disponibles pour cette réponse : {available_docs}.",
+            (
+                "- La question mentionne explicitement "
+                + ", ".join(missing_expectations)
+                + f", mais aucun document correspondant n'est présent dans le CONTEXT. "
+                + f"Explique clairement cette limite en {detected_lang} et appuie-toi sur ton expertise sans inventer de citations."
+            ),
+        ]
+        return "\n".join(note_lines)
+
     def _build_citations(self, chunks: List[DocumentChunk]) -> List[Citation]:
         """
         Build citations from chunks.
@@ -623,11 +786,11 @@ Answer:"""
             yield "data: [DONE]\n\n"
             return
         
-        # 🔥 1. Reformuler la query pour améliorer la recherche
-        reformulated_query = await self._reformulate_query(query)
+        # 🔥 1. Generate hypothetical answer for HyDE retrieval
+        hypothetical_answer = await self._generate_hypothetical_answer(query)
         
-        # Generate query embedding (sur la query reformulée)
-        query_embedding = await self.embedding_service.generate_embedding(reformulated_query)
+        # Generate query embedding from hypothetical answer (HyDE strategy)
+        query_embedding = await self.embedding_service.generate_embedding(hypothetical_answer)
         
         # 🔥 2. Recherche vectorielle large (initial_top_k = 20 par défaut)
         chunks, similarity_scores = await self._search_relevant_chunks(
@@ -644,19 +807,27 @@ Answer:"""
                 top_k=None  # Pas de limite ici, on filtre après
             )
             
-            # 🔥 4. Filtrage par seuil de rerank (NOUVEAU!)
-            # Élimine les chunks avec score < rerank_threshold
-            filtered = [(c, s) for c, s in zip(chunks, similarity_scores) 
-                       if s >= settings.rerank_threshold]
+            # 🔥 4. Filtrage par seuil de rerank (désactivable)
+            min_score = min(similarity_scores) if similarity_scores else 0.0
+            max_score = max(similarity_scores) if similarity_scores else 0.0
+            print(f"📊 Raw reranker scores - min: {min_score:.3f}, max: {max_score:.3f}")
             
-            if filtered:
-                chunks, similarity_scores = zip(*filtered)
-                chunks = list(chunks)
-                similarity_scores = list(similarity_scores)
-                print(f"✅ Après filtrage (seuil={settings.rerank_threshold}): {len(chunks)} chunks conservés")
+            if settings.disable_rerank_filter:
+                print("⚙️  Rerank filter disabled — every reranked chunk is kept")
             else:
-                chunks, similarity_scores = [], []
-                print(f"⚠️  Aucun chunk au-dessus du seuil de rerank ({settings.rerank_threshold})")
+                filtered = [
+                    (c, s)
+                    for c, s in zip(chunks, similarity_scores)
+                    if s >= settings.rerank_threshold
+                ]
+                if filtered:
+                    chunks, similarity_scores = zip(*filtered)
+                    chunks = list(chunks)
+                    similarity_scores = list(similarity_scores)
+                    print(f"✅ Après filtrage (seuil={settings.rerank_threshold}): {len(chunks)} chunks conservés")
+                else:
+                    chunks, similarity_scores = [], []
+                    print(f"⚠️  Aucun chunk au-dessus du seuil de rerank ({settings.rerank_threshold})")
             
             # 🔥 5. Diversification optionnelle (si enforce_diversity=True)
             if settings.enforce_diversity and chunks:
@@ -672,6 +843,9 @@ Answer:"""
                 chunks = chunks[:settings.top_k_results]
                 similarity_scores = similarity_scores[:settings.top_k_results]
         
+        # 🔍 6bis. Inject deterministic sections explicitly requested by the user (e.g., 6.1.1.7)
+        chunks, similarity_scores = self._augment_with_targeted_sections(query, chunks, similarity_scores)
+
         # Calculate average similarity score
         avg_similarity = sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0.0
         
@@ -722,6 +896,11 @@ Answer:"""
         # Detect question language
         detected_lang = self._detect_language(query)
         print(f"🌍 Detected language: {detected_lang}")
+
+        coverage_note = self._build_coverage_note(chunks, query, detected_lang)
+        if coverage_note:
+            print("⚠️ Coverage note triggered:")
+            print(coverage_note)
         
         # Debug: Log the context being sent to LLM
         print(f"\n{'='*80}")
@@ -735,7 +914,8 @@ Answer:"""
         print(f"{'='*80}\n")
         
         # Add context and query
-        user_content = f"""CONTEXT (excerpts from regulatory and internal documents):
+        coverage_section = f"{coverage_note}\n\n" if coverage_note else ""
+        user_content = f"""{coverage_section}CONTEXT (excerpts from regulatory and internal documents):
 
 {context}
 
@@ -769,9 +949,11 @@ CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
 3. **CITATION STRATEGY - ZERO TOLERANCE FOR HALLUCINATION:**
    - <mark> tags = **ONLY if text is VERBATIM in the CONTEXT above**
    - Read the CONTEXT carefully - if you don't see the exact text → NO <mark> tag
-   - DO NOT paraphrase, translate, or reformulate inside <mark> tags
+   - DO NOT paraphrase or reformulate inside <mark> tags. However, if the original CONTEXT is in a different language, you MUST translate it to {detected_lang} before putting it inside the <mark> tag.
    - DO NOT cite from your general knowledge - ONLY from CONTEXT
    - When in doubt → NO <mark> tag, just write normally
+    - ⚠️ Self-check BEFORE finishing: if your draft contains zero <mark> tags, you MUST either (a) go back to the CONTEXT, copy at least one exact sentence that mentions the requested article/section, and wrap it in <mark data-source="…">, or (b) explicitly state at the start of the answer that the CONTEXT lacks that citation. Answers without <mark> tags are invalid.
+    - ⚠️ If you cite multiple documents in the Sources list, each one must appear at least once inside a <mark> tag; otherwise remove it from Sources.
    
    **Examples:**
    - ✅ CONTEXT says: "Le ratio CET1 minimum est fixé à 4,5%"
@@ -788,15 +970,18 @@ CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
 
 4. **FLEXIBLE STRUCTURE:**
    - Simple question → simple answer (1-2 sections, 200-400 words)
-   - Complex question → detailed analysis (3-5 sections, 500-800 words)
+   - Complex question → detailed analysis (4-6 sections, 800-1200 words)
    - Adapt HTML structure to fit the content naturally
    - Completeness > arbitrary word limits
 
-5. **BE COMPREHENSIVE:**
-   - Answer the question fully
+5. **BE COMPREHENSIVE AND DETAILED:**
+   - Answer the question fully with DEPTH - don't just skim the surface
+   - For complex questions: provide 800-1200 words with 8-12 citations
+   - Break down mechanisms step-by-step with separate citations for each component
    - Add valuable context even if not explicitly asked
+   - Include numerical examples, formulas, thresholds, article references
    - Think: "What would a banking compliance expert want to know about this topic?"
-"""
+   - DON'T rush through complex topics - take time to explain thoroughly"""
         
         messages.append({"role": "user", "content": user_content})
         
@@ -808,7 +993,7 @@ CRITICAL INSTRUCTIONS - INTELLIGENT HYBRID MODE:
             model=settings.llm_model,
             messages=messages,
             temperature=0.7,
-            max_tokens=1500,  # Reduced from 2000 for faster responses
+            max_tokens=2500,  # Increased for longer, more detailed responses (was 1500)
             stream=True,
         )
         

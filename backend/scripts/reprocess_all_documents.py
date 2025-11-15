@@ -74,7 +74,9 @@ async def reprocess_document(document_id: str, doc_name: str):
                 print(f"      Page: {example.chunk_metadata.get('page')}")
                 print(f"      Page extraite: {example.chunk_metadata.get('page_extracted')}")
                 print(f"      Position physique: {example.chunk_metadata.get('physical_position')}")
-                print(f"      Section: {example.chunk_metadata.get('section', 'None')[:80]}")
+                section = example.chunk_metadata.get('section') if example.chunk_metadata else None
+                section_display = section if section else "None"
+                print(f"      Section: {section_display[:80]}")
         
         return {
             'success': True,
