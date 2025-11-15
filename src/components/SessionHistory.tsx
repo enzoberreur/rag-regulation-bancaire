@@ -29,6 +29,7 @@ interface SessionHistoryProps {
   onNewSession: () => void;
   onDeleteSession: (sessionId: string) => void;
   onLogout?: () => void;
+  onRestartTour?: () => void;
 }
 
 export function SessionHistory({
@@ -37,7 +38,8 @@ export function SessionHistory({
   onSelectSession,
   onNewSession,
   onDeleteSession,
-  onLogout
+  onLogout,
+  onRestartTour
 }: SessionHistoryProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
@@ -83,11 +85,12 @@ export function SessionHistory({
   };
 
   return (
-    <div className="w-64 bg-white flex flex-col border-r border-neutral-200 flex-shrink-0">
+    <div className="w-64 bg-white flex flex-col border-r border-neutral-200 flex-shrink-0" data-tour="sidebar">
       <div className="p-4 flex-shrink-0">
         <Button
           onClick={onNewSession}
           className="w-full bg-[#0066FF] hover:bg-[#0052CC] text-white transition-smooth h-9 text-sm group"
+          data-tour="new-session"
         >
           <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
           New
@@ -145,7 +148,7 @@ export function SessionHistory({
 
       {onLogout && (
         <div className="p-4 border-t border-neutral-100 flex-shrink-0">
-          <UserProfile onLogout={onLogout} />
+          <UserProfile onLogout={onLogout} onRestartTour={onRestartTour} />
         </div>
       )}
 

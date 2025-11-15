@@ -4,6 +4,7 @@ import { SessionHistory } from './components/SessionHistory';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { LoginModal } from './components/LoginModal';
 import { UserProfile } from './components/UserProfile';
+import { OnboardingTour } from './components/OnboardingTour';
 import { Toaster } from './components/ui/sonner';
 import { getDocuments } from './services/api';
 
@@ -50,6 +51,9 @@ interface UploadedDocument {
 export default function App() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // Onboarding tour state
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Start with empty state - no mock data
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -170,6 +174,24 @@ export default function App() {
   const handleLogin = () => {
     setIsAuthenticated(true);
     localStorage.setItem('isAuthenticated', 'true');
+    
+    // TEMPORARILY REMOVE THE CHECK - always show tour for debugging
+    console.log('Login - forcing onboarding tour');
+    setTimeout(() => {
+      console.log('Setting showOnboarding to true');
+      setShowOnboarding(true);
+    }, 500);
+  };
+  
+  const handleCompleteOnboarding = () => {
+    console.log('Completing onboarding');
+    setShowOnboarding(false);
+    localStorage.setItem('hasSeenOnboarding', 'true');
+  };
+  
+  const handleRestartTour = () => {
+    console.log('Restarting tour');
+    setShowOnboarding(true);
   };
 
   const handleLogout = () => {
@@ -405,6 +427,7 @@ export default function App() {
             onNewSession={handleNewSession}
             onDeleteSession={handleDeleteSession}
             onLogout={handleLogout}
+            onRestartTour={handleRestartTour}
           />
           
           <div className="flex flex-col flex-1 min-w-0 relative">
@@ -435,6 +458,7 @@ export default function App() {
             <ObservabilityPanel metrics={metrics} />
           </div>
           <Toaster />
+          <OnboardingTour isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
         </div>
       )}
     </>

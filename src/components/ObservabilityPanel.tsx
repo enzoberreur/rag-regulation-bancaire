@@ -29,7 +29,7 @@ export function ObservabilityPanel({ metrics }: ObservabilityPanelProps) {
   };
 
   return (
-    <div className="border-t border-neutral-200 bg-white px-8 py-4 relative">
+    <div className="border-t border-neutral-200 bg-white px-8 py-4 relative" data-tour="observability">
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#0066FF]/20 to-transparent"></div>
       
       <div className="max-w-4xl mx-auto flex items-center justify-start">

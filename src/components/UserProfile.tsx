@@ -6,19 +6,26 @@ import {
   DropdownMenuSeparator,
 } from './ui/dropdown-menu';
 import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
-import { LogOut } from 'lucide-react';
+import { LogOut, HelpCircle } from 'lucide-react';
 
 interface UserProfileProps {
   onLogout: () => void;
+  onRestartTour?: () => void;
 }
 
-export function UserProfile({ onLogout }: UserProfileProps) {
+export function UserProfile({ onLogout, onRestartTour }: UserProfileProps) {
   const handleLogout = () => {
     onLogout();
   };
+  
+  const handleRestartTour = () => {
+    if (onRestartTour) {
+      onRestartTour();
+    }
+  };
 
   return (
-    <div className="w-full">
+    <div className="w-full" data-tour="profile">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-3 w-full px-2 py-2 rounded-lg hover:bg-neutral-100 transition-colors group">
@@ -44,6 +51,14 @@ export function UserProfile({ onLogout }: UserProfileProps) {
             <div className="text-sm font-medium text-neutral-900">Enzo Berreur</div>
             <div className="text-xs text-neutral-500">enzo.berreur@gmail.com</div>
           </div>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem 
+            className="cursor-pointer text-[#0066FF] focus:text-[#0066FF] focus:bg-[#E6F0FF]"
+            onClick={handleRestartTour}
+          >
+            <HelpCircle className="w-4 h-4 mr-2" />
+            <span>Restart Tour</span>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem 
             className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
